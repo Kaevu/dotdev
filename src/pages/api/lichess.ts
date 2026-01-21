@@ -2,8 +2,8 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 
-export const GET: APIRoute = async ({ context }) => {
-  const env = context.locals.runtime.env;
+export const GET: APIRoute = async ({ locals }) => {
+  const env = locals.runtime.env;
   const LICHESS_TOKEN = env.LICHESS_TOKEN;
   const USERNAME = env.LICHESS_USERNAME;
 
