@@ -3,16 +3,10 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = async ({ request }) => {
-  const runtime = locals.runtime;
-  const LICHESS_TOKEN = context.locals.runtime?.env?.LICHESS_TOKEN || import.meta.env.LICHESS_TOKEN;
-  const USERNAME = context.locals.runtime?.env?.LICHESS_USERNAME || import.meta.env.LICHESS_USERNAME;
+  const env = context.locals.runtime.env;
+  const LICHESS_TOKEN = env.LICHESS_TOKEN;
+  const USERNAME = env.LICHESS_USERNAME;
 
-  console.log('=== ENV DEBUG ===');
-  console.log('Runtime env exists:', !!context.locals.runtime?.env);
-  console.log('LICHESS_TOKEN from runtime:', !!context.locals.runtime?.env?.LICHESS_TOKEN);
-  console.log('LICHESS_TOKEN from import.meta:', !!import.meta.env.LICHESS_TOKEN);
-  console.log('LICHESS_USERNAME:', USERNAME || 'MISSING');
-  console.log('=================');
 
   if (!LICHESS_TOKEN || !USERNAME) {
     return new Response(JSON.stringify({ 
@@ -20,7 +14,7 @@ export const GET: APIRoute = async ({ request }) => {
       message: 'LICHESS_TOKEN or LICHESS_USERNAME not set',
       debug: {
         hasRuntime: !!context.locals.runtime,
-        hasEnv: !!context.locals.runtime?.env,
+        hasEnv: !!env,
         hasToken: !!LICHESS_TOKEN,
         hasUsername: !!USERNAME
       }
