@@ -7,16 +7,30 @@ export const GET: APIRoute = async ({ request }) => {
   const LICHESS_TOKEN = runtime?.env?.LICHESS_TOKEN || import.meta.env.LICHESS_TOKEN;
   const USERNAME = runtime?.env?.LICHESS_USERNAME || import.meta.env.LICHESS_USERNAME;
 
+  console.log('=== ENV DEBUG ===');
+  console.log('Runtime env exists:', !!runtime?.env);
+  console.log('LICHESS_TOKEN from runtime:', !!runtime?.env?.LICHESS_TOKEN);
+  console.log('LICHESS_TOKEN from import.meta:', !!import.meta.env.LICHESS_TOKEN);
+  console.log('LICHESS_USERNAME:', USERNAME || 'MISSING');
+  console.log('=================');
 
   if (!LICHESS_TOKEN || !USERNAME) {
     return new Response(JSON.stringify({ 
       error: 'Missing configuration',
-      message: 'LICHESS_TOKEN or LICHESS_USERNAME not set'
+      message: 'LICHESS_TOKEN or LICHESS_USERNAME not set',
+      debug: {
+        hasRuntimeEnv: !!runtime?.env,
+        tokenFromRuntime: !!runtime?.env?.LICHESS_TOKEN,
+        tokenFromImportMeta: !!import.meta.env.LICHESS_TOKEN,
+        usernameFromRuntime: !!runtime?.env?.LICHESS_USERNAME,
+        usernameFromImportMeta: !!import.meta.env.LICHESS_USERNAME
+      }
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
 
   try {
     const response = await fetch(
