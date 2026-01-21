@@ -1,20 +1,51 @@
 ---
-import { type CollectionEntry, getCollection, render } from 'astro:content';
-import BlogPost from '../../layouts/BlogPost.astro';
+import { getCollection, getEntry, render } from 'astro:content';  // ← Key: import render here!
+import BaseLayout from '../../layouts/BaseLayout.astro';
 
+// 1. Generate static paths
 export async function getStaticPaths() {
-	const posts = await getCollection('blog');
-	return posts.map((post) => ({
-		params: { slug: post.id },
-		props: post,
-	}));
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.id },  // or post.slug if you defined a custom slug in frontmatter
+    props: { slug: post.id },
+  }));
 }
-type Props = CollectionEntry<'blog'>;
 
-const post = Astro.props;
-const { Content } = await render(post);
+// 2. Fetch entry using slug (reliable in v5+)
+const { slug } = Astro.params;
+const entry = await getEntry('blog', slug);
+
+if (!entry) {
+  return Astro.redirect('/404');
+}
+
+// 3. Render the content — this works once imported
+const { Content } = await render(entry);
+
+const { title, description, pubDate, updatedDate } = entry.data;
+
+// Date helper
+const formatDate = (date) =>
+  date instanceof Date
+    ? new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(date)
+    : 'Date unavailable';
 ---
 
-<BlogPost {...post.data}>
-	<Content />
-</BlogPost>
+<BaseLayout title={title ? `${title} — Kaevu` : 'Blog Post'}>
+  <article class="mt-8 prose prose-invert prose-neutral max-w-none">
+    <header class="mb-12">
+      <time class="text-neutral-500 text-sm block mb-3">
+        {formatDate(pubDate)}
+        {updatedDate && <span class="italic ml-2">· Updated {formatDate(updatedDate)}</span>}
+      </time>
+
+      <h1 class="text-2xl md:text-2xl font-light tracking-tight mb-6">{title || 'Untitled'}</h1>
+
+      {description && <p class="text-l text-neutral-300 leading-relaxed mb-10">{description}</p>}
+
+      <hr class="border-neutral-800 my-10" />
+    </header>
+
+    <Content />
+  </article>
+</BaseLayout>

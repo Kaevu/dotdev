@@ -1,0 +1,44 @@
+---
+import { getCollection } from 'astro:content';
+
+const allPosts = await getCollection('blog');
+const recentPosts = allPosts
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 3);
+
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric' 
+  }).format(date);
+}
+
+function getReadTime(content: string) {
+  const wordsPerMinute = 200;
+  const words = content.split(/\s+/).length;
+  const minutes = Math.ceil(words / wordsPerMinute);
+  return `${minutes} min`;
+}
+---
+
+<div class="space-y-4">
+  {recentPosts.map(async (post) => {
+    const readTime = getReadTime(post.body);
+    
+    return (
+      <a href={`/blog/${post.slug}`} class="block group">
+        <div class="text-xs text-neutral-500 mb-1">
+          {formatDate(post.data.pubDate)} · {readTime} read
+        </div>
+        <div class="text-neutral-200 group-hover:text-neutral-100 transition-colors">
+          {post.data.title}
+        </div>
+      </a>
+    );
+  })}
+</div>
+
+
+
+

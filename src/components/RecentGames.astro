@@ -1,0 +1,29 @@
+<div id="recent-games" class="space-y-3 min-h-[200px]">
+  <div class="loading space-y-3">
+    {[1, 2, 3].map(() => (
+      <div class="flex justify-between items-start -mx-3 px-3 py-2.5 rounded-lg animate-pulse">
+        <div class="flex-1">
+          <div class="h-4 bg-neutral-700/50 rounded w-32 mb-2"></div>
+          <div class="h-3 bg-neutral-700/30 rounded w-24"></div>
+        </div>
+        <div class="flex items-center gap-3 flex-shrink-0">
+          <div class="h-3 bg-neutral-700/30 rounded w-16"></div>
+          <div class="h-6 bg-neutral-700/30 rounded w-12"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<script src="../scripts/loadGames.ts"></script>
+
+<style>
+  #recent-games {
+    opacity: 0;
+    animation: fadeIn 0.4s ease-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    to { opacity: 1; }
+  }
+</style>
