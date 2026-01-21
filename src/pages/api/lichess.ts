@@ -4,12 +4,12 @@ import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = async ({ request }) => {
   const runtime = locals.runtime;
-  const LICHESS_TOKEN = runtime?.env?.LICHESS_TOKEN || import.meta.env.LICHESS_TOKEN;
-  const USERNAME = runtime?.env?.LICHESS_USERNAME || import.meta.env.LICHESS_USERNAME;
+  const LICHESS_TOKEN = context.locals.runtime?.env?.LICHESS_TOKEN || import.meta.env.LICHESS_TOKEN;
+  const USERNAME = context.locals.runtime?.env?.LICHESS_USERNAME || import.meta.env.LICHESS_USERNAME;
 
   console.log('=== ENV DEBUG ===');
-  console.log('Runtime env exists:', !!runtime?.env);
-  console.log('LICHESS_TOKEN from runtime:', !!runtime?.env?.LICHESS_TOKEN);
+  console.log('Runtime env exists:', !!context.locals.runtime?.env);
+  console.log('LICHESS_TOKEN from runtime:', !!context.locals.runtime?.env?.LICHESS_TOKEN);
   console.log('LICHESS_TOKEN from import.meta:', !!import.meta.env.LICHESS_TOKEN);
   console.log('LICHESS_USERNAME:', USERNAME || 'MISSING');
   console.log('=================');
@@ -19,11 +19,10 @@ export const GET: APIRoute = async ({ request }) => {
       error: 'Missing configuration',
       message: 'LICHESS_TOKEN or LICHESS_USERNAME not set',
       debug: {
-        hasRuntimeEnv: !!runtime?.env,
-        tokenFromRuntime: !!runtime?.env?.LICHESS_TOKEN,
-        tokenFromImportMeta: !!import.meta.env.LICHESS_TOKEN,
-        usernameFromRuntime: !!runtime?.env?.LICHESS_USERNAME,
-        usernameFromImportMeta: !!import.meta.env.LICHESS_USERNAME
+        hasRuntime: !!context.locals.runtime,
+        hasEnv: !!context.locals.runtime?.env,
+        hasToken: !!LICHESS_TOKEN,
+        hasUsername: !!USERNAME
       }
     }), {
       status: 500,
