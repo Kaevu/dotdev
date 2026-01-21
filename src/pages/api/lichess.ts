@@ -3,8 +3,9 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = async ({ request }) => {
-  const LICHESS_TOKEN = import.meta.env.LICHESS_TOKEN;
-  const USERNAME = import.meta.env.LICHESS_USERNAME;
+  const runtime = locals.runtime;
+  const LICHESS_TOKEN = runtime?.env?.LICHESS_TOKEN || import.meta.env.LICHESS_TOKEN;
+  const USERNAME = runtime?.env?.LICHESS_USERNAME || import.meta.env.LICHESS_USERNAME;
 
 
   if (!LICHESS_TOKEN || !USERNAME) {
