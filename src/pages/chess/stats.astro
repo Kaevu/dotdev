@@ -1,0 +1,61 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout>
+  <main class="mx-auto py-8 px-4 max-w-6xl">
+    <h1 class="text-3xl font-semibold mb-2">Advanced Chess Stats</h1>
+    <p class="text-neutral-400 mb-6">Aggregated insights from your recent Lichess games.</p>
+
+    <section id="stats-summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
+        <div class="text-sm text-neutral-400">Games Analyzed</div>
+        <div id="stat-games" class="text-2xl font-semibold">—</div>
+      </div>
+      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
+        <div class="text-sm text-neutral-400">Win Rate</div>
+        <div id="stat-winrate" class="text-2xl font-semibold">—</div>
+      </div>
+      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
+        <div class="text-sm text-neutral-400">Avg Opponent</div>
+        <div id="stat-avgopp" class="text-2xl font-semibold">—</div>
+      </div>
+      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
+        <div class="text-sm text-neutral-400">Top Opening</div>
+        <div id="stat-topopening" class="text-2xl font-semibold">—</div>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
+        <h3 class="mb-2 font-medium">Results Distribution</h3>
+        <canvas id="resultsChart" width="400" height="300"></canvas>
+      </div>
+
+      <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
+        <h3 class="mb-2 font-medium">Rating Timeline</h3>
+        <canvas id="ratingChart" width="400" height="300"></canvas>
+      </div>
+
+      <div class="bg-neutral-900 p-4 rounded border border-neutral-800 lg:col-span-2">
+        <h3 class="mb-2 font-medium">Top Openings</h3>
+        <canvas id="openingsChart" width="800" height="300"></canvas>
+      </div>
+
+      <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
+        <h3 class="mb-2 font-medium">Opponent Rating Buckets</h3>
+        <canvas id="oppRatingChart" width="400" height="300"></canvas>
+      </div>
+    </section>
+
+    <section class="mt-10">
+      <h2 class="text-2xl font-semibold mb-3">Recent Games</h2>
+      <div id="recent-games-stats" class="space-y-3 min-h-[120px]">
+        <div class="text-neutral-500">Loading recent games...</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module" src="../../scripts/loadChessStats.ts"></script>
+</BaseLayout>
