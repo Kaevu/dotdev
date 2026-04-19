@@ -3,9 +3,11 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = async ({ locals }) => {
-  const env = locals.runtime.env;
-  const LICHESS_TOKEN = env.LICHESS_TOKEN;
-  const USERNAME = env.LICHESS_USERNAME;
+  // Safely extract environment variables from locals.runtime.env when available,
+  // otherwise fall back to process.env for local development.
+  const env = (locals && (locals as any).runtime && (locals as any).runtime.env) ?? process.env;
+  const LICHESS_TOKEN = env?.LICHESS_TOKEN;
+  const USERNAME = env?.LICHESS_USERNAME;
 
 
   if (!LICHESS_TOKEN || !USERNAME) {
@@ -13,7 +15,7 @@ export const GET: APIRoute = async ({ locals }) => {
       error: 'Missing configuration',
       message: 'LICHESS_TOKEN or LICHESS_USERNAME not set',
       debug: {
-        hasRuntime: !!context.locals.runtime,
+        hasRuntime: !!(locals && (locals as any).runtime),
         hasEnv: !!env,
         hasToken: !!LICHESS_TOKEN,
         hasUsername: !!USERNAME
