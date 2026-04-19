@@ -11,17 +11,16 @@ export const GET: APIRoute = async ({ locals }) => {
 
 
   if (!LICHESS_TOKEN || !USERNAME) {
-    return new Response(JSON.stringify({ 
-      error: 'Missing configuration',
-      message: 'LICHESS_TOKEN or LICHESS_USERNAME not set',
-      debug: {
-        hasRuntime: !!(locals && (locals as any).runtime),
-        hasEnv: !!env,
-        hasToken: !!LICHESS_TOKEN,
-        hasUsername: !!USERNAME
-      }
-    }), {
-      status: 500,
+    // If configuration is missing, return an empty array (200) so widgets
+    // that depend on this route degrade gracefully instead of throwing 500.
+    console.warn('LICHESS_TOKEN or LICHESS_USERNAME not set for Lichess API route', {
+      hasRuntime: !!(locals && (locals as any).runtime),
+      hasEnv: !!env,
+      hasToken: !!LICHESS_TOKEN,
+      hasUsername: !!USERNAME
+    });
+    return new Response(JSON.stringify([]), {
+      status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -39,12 +38,10 @@ export const GET: APIRoute = async ({ locals }) => {
     );
 
     if (!response.ok) {
-      return new Response(JSON.stringify({ 
-        error: 'Failed to fetch games from Lichess',
-        status: response.status,
-        statusText: response.statusText
-      }), {
-        status: response.status,
+      console.error('Lichess returned non-OK status', { status: response.status, statusText: response.statusText });
+      // degrade gracefully: return an empty array so the client can continue
+      return new Response(JSON.stringify([]), {
+        status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -102,12 +99,9 @@ export const GET: APIRoute = async ({ locals }) => {
 
   } catch (error) {
     console.error('Error in Lichess API route:', error);
-    return new Response(JSON.stringify({ 
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    }), {
-      status: 500,
+    // degrade gracefully: return empty array so widgets don't break on server errors
+    return new Response(JSON.stringify([]), {
+      status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
   }
