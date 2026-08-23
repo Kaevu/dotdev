@@ -2,3 +2,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Theme variables (dark-first). Light can be added by overriding these vars) */
+:root {
+  /* Typography */
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --font-serif: "DM Serif Display", Georgia, Cambria, "Times New Roman", Times,
+    serif;
+
+  /* Foreground palette */
+  --fg-primary: #e5e5e5;   /* near-neutral-200 */
+  --fg-secondary: #a3a3a3; /* neutral-400 */
+  --fg-tertiary: #737373;  /* neutral-500 */
+
+  /* Borders */
+  --border: #3f3f46; /* zinc-700 */
+
+  /* Category pill colors (dark mode fills, light text) */
+  --pill-cs-bg: #4c1d95;       /* purple-900 */
+  --pill-cs-fg: #ede9fe;       /* purple-100 */
+  --pill-ml-bg: #1e3a8a;       /* blue-900 */
+  --pill-ml-fg: #dbeafe;       /* blue-100 */
+  --pill-finance-bg: #115e59;  /* teal-900 */
+  --pill-finance-fg: #ccfbf1;  /* teal-100 */
+  --pill-math-bg: #7c2d12;     /* orange-900 (coral-ish) */
+  --pill-math-fg: #ffedd5;     /* orange-100 */
+  --pill-other-bg: #27272a;    /* zinc-800 */
+  --pill-other-fg: #e4e4e7;    /* zinc-200 */
+  --pill-untagged-bg: #3f3f46; /* zinc-700 */
+  --pill-untagged-fg: #a1a1aa; /* zinc-400 */
+}
+
+/* Wire Google fonts into Tailwind utility classes without editing config */
+.font-mono { font-family: var(--font-mono) !important; }
+.font-serif { font-family: var(--font-serif) !important; }
+
+/* Utility tokens for bookshelf page */
+.fg-primary { color: var(--fg-primary); }
+.fg-secondary { color: var(--fg-secondary); }
+.fg-tertiary { color: var(--fg-tertiary); }
+.border-subtle { border-color: var(--border); }
+
+.pill {
+  border-radius: 9999px;
+  font-size: 0.75rem; /* text-sm-ish */
+  line-height: 1rem;
+  padding: 0.125rem 0.5rem; /* 0.5h x spacing */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pill-cs { background: var(--pill-cs-bg); color: var(--pill-cs-fg); }
+.pill-ml { background: var(--pill-ml-bg); color: var(--pill-ml-fg); }
+.pill-finance { background: var(--pill-finance-bg); color: var(--pill-finance-fg); }
+.pill-math { background: var(--pill-math-bg); color: var(--pill-math-fg); }
+.pill-other { background: var(--pill-other-bg); color: var(--pill-other-fg); }
+.pill-untagged { background: var(--pill-untagged-bg); color: var(--pill-untagged-fg); }

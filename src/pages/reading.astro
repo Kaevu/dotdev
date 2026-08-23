@@ -1,7 +1,58 @@
 ---
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import BaseLayout from "../layouts/BaseLayout.astro"
+import Bookshelf from "../components/Bookshelf.tsx";
+
+type ShareItem = {
+  name: string;
+  size: number;
+  last_modified?: string;
+  mode?: number | string;
+};
+
+const SHARE_ID = "Xio8EZcNj5vpmpMgbtMK7F";
+const RES_URL = `https://ebooks.kaevu.dev/api/v2/shares/${SHARE_ID}/dirs`;
+
+let items: ShareItem[] = [];
+try {
+  const res = await fetch(RES_URL, { headers: { accept: "application/json" } });
+  if (res.ok) {
+    items = (await res.json()) as ShareItem[];
+  } else {
+    console.error("Reading: fetch failed", res.status);
+  }
+} catch (e) {
+  console.error("Reading: fetch error", e);
+}
+
+function loadTagMap(): Record<string, string> {
+  const filePath = join(process.cwd(), "src", "data", "books", "tags.md");
+  let text: string;
+  try {
+    text = readFileSync(filePath, "utf-8");
+  } catch {
+    return {};
+  }
+  const map: Record<string, string> = {};
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("---")) continue;
+    const sep = line.indexOf("|");
+    if (sep === -1) continue;
+    const key = line.slice(0, sep).trim().toLowerCase();
+    const val = line.slice(sep + 1).trim();
+    if (key && val) map[key] = val;
+  }
+  return map;
+}
+
+const tags = loadTagMap();
 ---
 
 <BaseLayout>
-
+  <section aria-labelledby="bookshelf-heading" class="">
+    <h1 id="bookshelf-heading" class="sr-only">Bookshelf</h1>
+    <Bookshelf client:load items={items} tags={tags} />
+  </section>
 </BaseLayout>
