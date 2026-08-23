@@ -16,35 +16,17 @@ import BaseLayout from "../layouts/BaseLayout.astro"
         <div class="text-sm text-neutral-400">Win Rate</div>
         <div id="stat-winrate" class="text-2xl font-semibold">—</div>
       </div>
-      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
-        <div class="text-sm text-neutral-400">Avg Opponent</div>
-        <div id="stat-avgopp" class="text-2xl font-semibold">—</div>
-      </div>
-      <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
-        <div class="text-sm text-neutral-400">Top Opening</div>
-        <div id="stat-topopening" class="text-2xl font-semibold">—</div>
-      </div>
     </section>
 
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
-        <h3 class="mb-2 font-medium">Results Distribution</h3>
-        <canvas id="resultsChart" width="400" height="300"></canvas>
-      </div>
-
       <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
         <h3 class="mb-2 font-medium">Rating Timeline</h3>
         <canvas id="ratingChart" width="400" height="300"></canvas>
       </div>
 
-      <div class="bg-neutral-900 p-4 rounded border border-neutral-800 lg:col-span-2">
-        <h3 class="mb-2 font-medium">Top Openings</h3>
-        <canvas id="openingsChart" width="800" height="300"></canvas>
-      </div>
-
       <div class="bg-neutral-900 p-4 rounded border border-neutral-800">
-        <h3 class="mb-2 font-medium">Opponent Rating Buckets</h3>
-        <canvas id="oppRatingChart" width="400" height="300"></canvas>
+        <h3 class="mb-2 font-medium">Top 3 Openings</h3>
+        <div id="top-openings-widget" class="space-y-2"></div>
       </div>
     </section>
 
@@ -53,9 +35,14 @@ import BaseLayout from "../layouts/BaseLayout.astro"
       <div id="recent-games-stats" class="space-y-3 min-h-[120px]">
         <div class="text-neutral-500">Loading recent games...</div>
       </div>
+      <div class="flex items-center justify-between mt-4 gap-2">
+        <button id="rg-prev" class="px-3 py-1.5 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Prev</button>
+        <div id="rg-pageinfo" class="text-sm text-neutral-400"></div>
+        <button id="rg-next" class="px-3 py-1.5 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Next</button>
+      </div>
     </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script type="module" src="/scripts/loadChessStats.js"></script>
+  <script src="../scripts/loadChessStats.ts"></script>
 </BaseLayout>

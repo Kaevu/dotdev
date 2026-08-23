@@ -23,9 +23,12 @@ function bucketRating(r: number | undefined) {
 }
 
 export const GET: APIRoute = async ({ locals, request }) => {
-  const env = (locals as any)?.runtime?.env;
+  // Safely extract environment variables (supports Cloudflare locals.runtime.env),
+  // otherwise fall back to process.env for local development.
+  const env = (locals && (locals as any).runtime && (locals as any).runtime.env) ?? process.env;
   const LICHESS_TOKEN = env?.LICHESS_TOKEN as string | undefined;
-  const USERNAME = env?.LICHESS_USERNAME as string | undefined;
+  // normalize username once to lowercase for URL/comparisons/cache consistency
+  const USERNAME = (env?.LICHESS_USERNAME as string | undefined)?.toLowerCase();
 
   if (!LICHESS_TOKEN || !USERNAME) {
     return new Response(JSON.stringify({
@@ -40,6 +43,11 @@ export const GET: APIRoute = async ({ locals, request }) => {
   const url = new URL(request.url);
   const maxParam = Number(url.searchParams.get('max') || '200');
   const max = Number.isFinite(maxParam) ? Math.min(Math.max(10, Math.floor(maxParam)), 500) : 200;
+  // Pagination params for recent games view
+  const pageParam = Number(url.searchParams.get('page') || '1');
+  const pageSizeParam = Number(url.searchParams.get('pageSize') || '10');
+  const page = Number.isFinite(pageParam) ? Math.max(1, Math.floor(pageParam)) : 1;
+  const pageSize = Number.isFinite(pageSizeParam) ? Math.min(100, Math.max(1, Math.floor(pageSizeParam))) : 10;
   const ttlParam = Number(url.searchParams.get('ttl') || '');
   const ttl = Number.isFinite(ttlParam) && ttlParam > 0 ? Math.min(ttlParam, 3600) : CACHE_TTL_DEFAULT;
 
@@ -82,7 +90,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
 
     const text = await response.text();
     if (!text || text.trim().length === 0) {
-      const empty = { gamesCount: 0, wins: 0, losses: 0, draws: 0, winRate: 0, avgOpponentRating: null, ratingTimeline: [], openingStats: [], perfCounts: {}, opponentRatingBuckets: [], recentGames: [] };
+      const empty = { gamesCount: 0, wins: 0, losses: 0, draws: 0, winRate: 0, avgOpponentRating: null, ratingTimeline: [], openingStats: [], perfCounts: {}, recentGames: [] };
       cache[cacheKey] = { data: empty, expiresAt: now + ttl * 1000 };
       return new Response(JSON.stringify(empty), {
         status: 200,
@@ -101,7 +109,6 @@ export const GET: APIRoute = async ({ locals, request }) => {
     const ratingTimeline: Array<{ date: string; rating: number | null }> = [];
     const openingMap: Record<string, { games: number; wins: number }> = {};
     const perfCounts: Record<string, number> = {};
-    const opponentBuckets: Record<string, { count: number; wins: number }> = {};
     let totalOppRating = 0;
     let oppRatingCount = 0;
 
@@ -143,12 +150,6 @@ export const GET: APIRoute = async ({ locals, request }) => {
       const perf = game.speed || game.perf || 'unknown';
       perfCounts[perf] = (perfCounts[perf] || 0) + 1;
 
-      // opponent rating buckets
-      const bucket = bucketRating(opponentRating);
-      if (!opponentBuckets[bucket]) opponentBuckets[bucket] = { count: 0, wins: 0 };
-      opponentBuckets[bucket].count++;
-      if (result === 'Win') opponentBuckets[bucket].wins++;
-
       if (opponentRating != null) {
         totalOppRating += opponentRating;
         oppRatingCount++;
@@ -165,6 +166,8 @@ export const GET: APIRoute = async ({ locals, request }) => {
         url: `https://lichess.org/${game.id}`,
         rating: playerRating ?? null,
         opponentRating: opponentRating ?? null,
+        color: isWhite ? 'white' : 'black',
+        eloDiff: (isWhite ? game.players?.white?.ratingDiff : game.players?.black?.ratingDiff) ?? null,
       });
     }
 
@@ -178,16 +181,16 @@ export const GET: APIRoute = async ({ locals, request }) => {
       .sort((a, b) => b.games - a.games)
       .slice(0, 20);
 
-    const opponentRatingBuckets = Object.entries(opponentBuckets).map(([bucket, d]) => ({
-      bucket,
-      count: d.count,
-      wins: d.wins,
-      winRate: d.count ? d.wins / d.count : 0
-    })).sort((a, b) => b.count - a.count);
-
     const gamesCount = wins + losses + draws;
     const winRate = gamesCount ? wins / gamesCount : 0;
     const avgOpponentRating = oppRatingCount ? Math.round(totalOppRating / oppRatingCount) : null;
+
+    // Paginate recent games (newest first already)
+    const totalItems = recentGames.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const recentGamesPage = recentGames.slice(start, end);
 
     const result = {
       gamesCount,
@@ -199,8 +202,8 @@ export const GET: APIRoute = async ({ locals, request }) => {
       ratingTimeline,
       openingStats,
       perfCounts,
-      opponentRatingBuckets,
-      recentGames: recentGames.slice(0, 50)
+      recentGames: recentGamesPage,
+      pagination: { page, pageSize, totalPages, totalItems }
     };
 
     // cache
