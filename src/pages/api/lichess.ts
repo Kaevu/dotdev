@@ -3,12 +3,11 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 
 export const GET: APIRoute = async ({ locals }) => {
-  // Safely extract environment variables from locals.runtime.env when available,
+  // Safely extract environment variables (supports Cloudflare locals.runtime.env),
   // otherwise fall back to process.env for local development.
   const env = (locals && (locals as any).runtime && (locals as any).runtime.env) ?? process.env;
   const LICHESS_TOKEN = env?.LICHESS_TOKEN;
   const USERNAME = env?.LICHESS_USERNAME;
-
 
   if (!LICHESS_TOKEN || !USERNAME) {
     // If configuration is missing, return an empty array (200) so widgets
