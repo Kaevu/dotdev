@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AFFILIATES, YANKEES } from "../lib/mlb/config";
+import { AFFILIATES, WATCHLIST, YANKEES } from "../lib/mlb/config";
 import {
+  fipFrom,
   hitLine,
   pitchLine,
   prevWindowByBF,
@@ -23,10 +24,26 @@ type PlayerLog = {
 };
 type Payload = { season: number; fetchedAt: string; players: PlayerLog[] };
 
+type LeagueCtx = {
+  name?: string;
+  lgOBP?: number | null;
+  lgSLG?: number | null;
+  lgERA?: number | null;
+  fipConst?: number | null;
+};
+type CtxPayload = { sports: Record<string, Record<string, LeagueCtx>> };
+
 const DASH = "—";
 const f3 = (x: number | null) => (x == null ? DASH : x.toFixed(3).replace(/^0\./, "."));
 const f2 = (x: number | null) => (x == null ? DASH : x.toFixed(2));
 const f1 = (x: number | null) => (x == null ? DASH : x.toFixed(1));
+const pct = (x: number | null) => (x == null ? DASH : (x * 100).toFixed(1));
+const pts = (d: number | null) => {
+  if (d == null) return DASH;
+  const v = Math.round(d * 1000);
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  return `${sign}.${String(Math.abs(v)).padStart(3, "0")}`;
+};
 
 function ymdToStr(ymd: number | null): string {
   if (!ymd) return "";
@@ -38,8 +55,8 @@ function ymdToStr(ymd: number | null): string {
 
 const STALE_DAYS = 21 * 24 * 60 * 60 * 1000;
 
-function usePayload(url: string | null) {
-  const [state, setState] = useState<{ data?: Payload; error?: string; loading: boolean }>({
+function usePayload<T>(url: string | null) {
+  const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
     loading: false,
   });
   useEffect(() => {
@@ -53,7 +70,7 @@ function usePayload(url: string | null) {
       .then(async (r) => {
         const j = await r.json();
         if (!r.ok) throw new Error(j.message || j.error || `HTTP ${r.status}`);
-        return j as Payload;
+        return j as T;
       })
       .then((d) => {
         if (alive) setState({ data: d, loading: false });
@@ -73,30 +90,40 @@ function Spark({ values }: { values: number[] }) {
   const w = 64;
   const h = 18;
   const max = Math.max(...values);
-  if (max <= 0) return null;
+  const min = Math.min(...values);
+  if (max === min) return null;
+  const span = max - min;
   const step = w / (values.length - 1);
-  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`).join(" ");
+  const p = values
+    .map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / span) * h).toFixed(1)}`)
+    .join(" ");
   return (
     <svg width={w} height={h} className="opacity-60">
-      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <polyline points={p} fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
 
 type Row = {
-  player: PlayerLog;
+  id: number;
+  name: string;
+  pos: string;
   pin: boolean;
+  pinNote: string;
+  sid: number;
   cur: HitLine | PitchLine;
   delta: number | null;
   spark: number[];
   stale: boolean;
+  lastPlayed: number | null;
+  winGames: number[][];
 };
 
 type Col = {
   key: string;
   label: string;
   num: (r: Row) => number | null;
-  fmt: (r: Row) => string;
+  fmt: (r: Row, ctx?: LeagueCtx) => string;
   deltaGoodDir?: 1 | -1;
 };
 
@@ -114,16 +141,26 @@ export default function BaseballTable() {
 
   const presets = mode === "games" ? GAMES_PRESETS : PA_PRESETS;
 
-  const teamUrl =
-    tab === "yanks"
-      ? `/api/mlb/team-log?teamId=${YANKEES.id}&group=${group === "hitters" ? "hitting" : "pitching"}`
-      : `/api/mlb/team-log?teamId=${affId}&group=${group === "hitters" ? "hitting" : "pitching"}`;
+  const teamId = tab === "yanks" ? YANKEES.id : affId;
+  const teamSportId =
+    tab === "yanks" ? YANKEES.sportId : AFFILIATES.find((t) => t.id === affId)?.sportId ?? 1;
+
+  const teamUrl = `/api/mlb/team-log?teamId=${teamId}&group=${group === "hitters" ? "hitting" : "pitching"}`;
   const watchUrl = tab === "farm" ? "/api/mlb/watchlist-log" : null;
 
-  const team = usePayload(teamUrl);
-  const watch = usePayload(watchUrl);
+  const ctxIds =
+    tab === "farm"
+      ? [...new Set([teamSportId, ...WATCHLIST.map((w) => w.sportId)])].sort((a, b) => a - b)
+      : [teamSportId];
+  const ctxUrl = `/api/mlb/league-context?sportIds=${ctxIds.join(",")}`;
 
-  const apiGroup = group === "hitters" ? "hitting" : "pitching";
+  const team = usePayload<Payload>(teamUrl);
+  const watch = usePayload<Payload>(watchUrl);
+  const ctx = usePayload<CtxPayload>(ctxUrl);
+
+  function leagueFor(r: Row): LeagueCtx | undefined {
+    return ctx.data?.sports?.[String(r.sid)];
+  }
 
   const rows: Row[] = useMemo(() => {
     const tp = team.data?.players ?? [];
@@ -148,11 +185,11 @@ export default function BaseballTable() {
         win = windowByGames(g, winVal);
         prev = prevWindowByGames(g, winVal);
       } else if (group === "hitters") {
-        win = windowByPA(g as number[][], winVal);
-        prev = prevWindowByPA(g as number[][], winVal);
+        win = windowByPA(g, winVal);
+        prev = prevWindowByPA(g, winVal);
       } else {
-        win = windowByBF(g as number[][], winVal);
-        prev = prevWindowByBF(g as number[][], winVal);
+        win = windowByBF(g, winVal);
+        prev = prevWindowByBF(g, winVal);
       }
 
       let cur: HitLine | PitchLine;
@@ -160,11 +197,16 @@ export default function BaseballTable() {
       let spark: number[] = [];
 
       if (group === "hitters") {
-        cur = hitLine(win as number[][]);
-        const pl = hitLine(prev as number[][]);
+        cur = hitLine(win);
+        const pl = hitLine(prev);
         delta = cur.ops != null && pl.ops != null ? cur.ops - pl.ops : null;
-        let h = 0, ab = 0, tb = 0, bb = 0, hbp = 0, sf = 0;
-        spark = (win as number[][]).map((gm) => {
+        let h = 0,
+          ab = 0,
+          tb = 0,
+          bb = 0,
+          hbp = 0,
+          sf = 0;
+        spark = win.map((gm) => {
           ab += gm[2];
           h += gm[3];
           tb += gm[3] + gm[4] + 2 * gm[5] + 3 * gm[6];
@@ -177,54 +219,111 @@ export default function BaseballTable() {
           return obp + slg;
         });
       } else {
-        cur = pitchLine(win as number[][]);
-        const pl = pitchLine(prev as number[][]);
+        cur = pitchLine(win);
+        const pl = pitchLine(prev);
         delta = cur.era != null && pl.era != null ? cur.era - pl.era : null;
-        spark = (win as number[][]).map((gm) => gm[6]);
+        let er = 0;
+        let outs = 0;
+        spark = win.map((gm) => {
+          outs += gm[1];
+          er += gm[4];
+          return outs > 0 ? (er * 27) / outs : 0;
+        });
       }
 
       const lpMs = player.lastPlayed ? Date.parse(ymdToStr(player.lastPlayed)) : 0;
       const stale = !lpMs || now - lpMs > STALE_DAYS;
 
-      return { player, pin, cur, delta, spark, stale };
+      const wl = WATCHLIST.find((w) => w.id === player.id);
+      return {
+        id: player.id,
+        name: player.name,
+        pos: player.pos ?? "",
+        pin,
+        pinNote: player.note ?? wl?.note ?? "",
+        sid: wl ? wl.sportId : teamSportId,
+        cur,
+        delta,
+        spark,
+        stale,
+        lastPlayed: player.lastPlayed,
+        winGames: win,
+      };
     });
-  }, [team.data, watch.data, group, mode, winVal]);
+  }, [team.data, watch.data, group, mode, winVal, teamSportId]);
 
   const cols: Col[] = useMemo(() => {
     if (group === "hitters") {
       const c: Col[] = [
-        {
-          key: "g", label: "G", num: (r) => r.cur.g, fmt: (r) => String(r.cur.g),
-        },
         { key: "pa", label: "PA", num: (r) => (r.cur as HitLine).pa, fmt: (r) => String((r.cur as HitLine).pa) },
-        { key: "h", label: "H", num: (r) => (r.cur as HitLine).h, fmt: (r) => String((r.cur as HitLine).h) },
         { key: "hr", label: "HR", num: (r) => (r.cur as HitLine).hr, fmt: (r) => String((r.cur as HitLine).hr) },
-        { key: "rbi", label: "RBI", num: (r) => (r.cur as HitLine).rbi, fmt: (r) => String((r.cur as HitLine).rbi) },
-        { key: "sb", label: "SB", num: (r) => (r.cur as HitLine).sb, fmt: (r) => String((r.cur as HitLine).sb) },
-        { key: "bb", label: "BB%", num: (r) => (r.cur as HitLine).bbPct, fmt: (r) => f1((r.cur as HitLine).bbPct) },
-        { key: "so", label: "K%", num: (r) => (r.cur as HitLine).kPct, fmt: (r) => f1((r.cur as HitLine).kPct) },
+        { key: "bbPct", label: "BB%", num: (r) => (r.cur as HitLine).bbPct, fmt: (r) => pct((r.cur as HitLine).bbPct) },
+        { key: "kPct", label: "K%", num: (r) => (r.cur as HitLine).kPct, fmt: (r) => pct((r.cur as HitLine).kPct) },
         { key: "avg", label: "AVG", num: (r) => (r.cur as HitLine).avg, fmt: (r) => f3((r.cur as HitLine).avg) },
         { key: "obp", label: "OBP", num: (r) => (r.cur as HitLine).obp, fmt: (r) => f3((r.cur as HitLine).obp) },
         { key: "slg", label: "SLG", num: (r) => (r.cur as HitLine).slg, fmt: (r) => f3((r.cur as HitLine).slg) },
         { key: "ops", label: "OPS", num: (r) => (r.cur as HitLine).ops, fmt: (r) => f3((r.cur as HitLine).ops) },
         {
+          key: "opsPlus",
+          label: "OPS+",
+          num: (r) => {
+            const lg = leagueFor(r);
+            const cur = r.cur as HitLine;
+            if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return null;
+            return 100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1);
+          },
+          fmt: (r) => {
+            const lg = leagueFor(r);
+            const cur = r.cur as HitLine;
+            if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return DASH;
+            return String(Math.round(100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1)));
+          },
+        },
+        { key: "woba", label: "wOBA", num: (r) => (r.cur as HitLine).woba, fmt: (r) => f3((r.cur as HitLine).woba) },
+        {
           key: "delta",
           label: "ΔOPS",
           num: (r) => r.delta,
-          fmt: (r) => (r.delta == null ? DASH : (r.delta > 0 ? "+" : "") + Math.round(r.delta * 1000)),
+          fmt: (r) => pts(r.delta),
           deltaGoodDir: 1,
         },
       ];
       return c;
     }
     const c: Col[] = [
-      { key: "g", label: "G", num: (r) => r.cur.g, fmt: (r) => String(r.cur.g) },
       { key: "ip", label: "IP", num: (r) => (r.cur as PitchLine).outs, fmt: (r) => (r.cur as PitchLine).ip },
-      { key: "h", label: "H", num: (r) => (r.cur as PitchLine).h, fmt: (r) => String((r.cur as PitchLine).h) },
-      { key: "er", label: "ER", num: (r) => (r.cur as PitchLine).er, fmt: (r) => String((r.cur as PitchLine).er) },
-      { key: "bb", label: "BB", num: (r) => (r.cur as PitchLine).bb, fmt: (r) => String((r.cur as PitchLine).bb) },
       { key: "so", label: "SO", num: (r) => (r.cur as PitchLine).so, fmt: (r) => String((r.cur as PitchLine).so) },
       { key: "era", label: "ERA", num: (r) => (r.cur as PitchLine).era, fmt: (r) => f2((r.cur as PitchLine).era) },
+      {
+        key: "eraPlus",
+        label: "ERA+",
+        num: (r) => {
+          const lg = leagueFor(r);
+          const era = (r.cur as PitchLine).era;
+          if (!lg?.lgERA || era == null || era === 0) return null;
+          return (100 * lg.lgERA) / era;
+        },
+        fmt: (r) => {
+          const lg = leagueFor(r);
+          const era = (r.cur as PitchLine).era;
+          if (!lg?.lgERA || era == null || era === 0) return DASH;
+          return String(Math.round((100 * lg.lgERA) / era));
+        },
+      },
+      {
+        key: "fip",
+        label: "FIP",
+        num: (r) => {
+          const lg = leagueFor(r);
+          if (!lg?.fipConst) return null;
+          return fipFrom(r.winGames, lg.fipConst);
+        },
+        fmt: (r) => {
+          const lg = leagueFor(r);
+          if (!lg?.fipConst) return DASH;
+          return f2(fipFrom(r.winGames, lg.fipConst));
+        },
+      },
       { key: "whip", label: "WHIP", num: (r) => (r.cur as PitchLine).whip, fmt: (r) => f2((r.cur as PitchLine).whip) },
       { key: "k9", label: "K/9", num: (r) => (r.cur as PitchLine).k9, fmt: (r) => f1((r.cur as PitchLine).k9) },
       {
@@ -236,7 +335,7 @@ export default function BaseballTable() {
       },
     ];
     return c;
-  }, [group]);
+  }, [group, ctx.data]);
 
   const sorted = useMemo(() => {
     const active = cols.find((c) => c.key === sortKey);
@@ -245,7 +344,7 @@ export default function BaseballTable() {
       if (a.pin !== b.pin) return a.pin ? -1 : 1;
       const av = active.num(a);
       const bv = active.num(b);
-      if (av == null && bv == null) return a.player.name.localeCompare(b.player.name);
+      if (av == null && bv == null) return a.name.localeCompare(b.name);
       if (av == null) return 1;
       if (bv == null) return -1;
       return (av - bv) * sortDir;
@@ -263,13 +362,14 @@ export default function BaseballTable() {
 
   const loading = team.loading || watch.loading;
   const error = team.error || watch.error;
-  const meta = team.data;
 
   const chip = (activeState: boolean) =>
     "text-xs px-3 py-1 rounded border transition-colors " +
     (activeState
       ? "text-neutral-100 border-neutral-600 bg-neutral-800"
       : "text-neutral-400 border-neutral-800 hover:text-neutral-200");
+
+  const cellCls = "px-2 py-1.5 text-right whitespace-nowrap tabular-nums";
 
   return (
     <div className="space-y-4">
@@ -341,15 +441,12 @@ export default function BaseballTable() {
 
       {!loading && !error && sorted.length > 0 && (
         <div className="overflow-x-auto bg-neutral-900 rounded border border-neutral-800">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-neutral-500 text-xs">
-                <th className="text-left font-normal px-3 py-2 sticky left-0 bg-neutral-900">
+              <tr className="text-neutral-500">
+                <th className="text-left font-normal px-2 py-2 sticky left-0 bg-neutral-900 min-w-[140px]">
                   {tab === "farm" ? "Prospect" : "Player"}
                 </th>
-                {group === "hitters" && (
-                  <th className="font-normal px-2 py-2 text-left">Pos</th>
-                )}
                 {cols.map((c) => (
                   <th
                     key={c.key}
@@ -363,58 +460,64 @@ export default function BaseballTable() {
                     {sortKey === c.key ? (sortDir === -1 ? " ↓" : " ↑") : ""}
                   </th>
                 ))}
-                <th className="font-normal px-3 py-2 text-right">Form</th>
+                <th className="font-normal px-2 py-2 text-right">Form</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r) => (
-                <tr
-                  key={`${tab}-${r.player.id}`}
-                  className="border-t border-neutral-800 hover:bg-neutral-800/40"
-                >
-                  <td
-                    className={
-                      "px-3 py-2 whitespace-nowrap sticky left-0 bg-neutral-900 " +
-                      (r.stale ? "text-neutral-600" : "text-neutral-200")
-                    }
-                    title={r.stale ? `last played ${ymdToStr(r.player.lastPlayed) || "n/a"}` : r.player.name}
+              {sorted.map((r) => {
+                const hl = r.cur as HitLine;
+                const tip =
+                  group === "hitters"
+                    ? `${r.name} · ${hl.g} G · ${hl.ab}/${hl.h} · ${hl.rbi} RBI · ${hl.sb} SB`
+                    : `${r.name} · ${r.cur.g} G`;
+                return (
+                  <tr
+                    key={`${tab}-${r.id}`}
+                    className="border-t border-neutral-800 hover:bg-neutral-800/40"
                   >
-                    {r.pin && <span className="text-amber-500 mr-1" title={r.player.note}>●</span>}
-                    {r.player.name}
-                    {r.stale && <span className="text-neutral-600 text-xs ml-1">(IL/off)</span>}
-                  </td>
-                  {group === "hitters" && (
-                    <td className="px-2 py-2 text-neutral-500">{r.player.pos}</td>
-                  )}
-                  {cols.map((c) => {
-                    const raw = c.key === "delta" ? r.delta : c.num(r);
-                    let cls = "px-2 py-2 text-right whitespace-nowrap ";
-                    if (c.key === "delta" && raw != null) {
-                      const good = c.deltaGoodDir === 1 ? (raw as number) > 0 : (raw as number) < 0;
-                      cls += good ? "text-emerald-400" : "text-red-400";
-                    } else {
-                      cls += "text-neutral-300";
-                    }
-                    return (
-                      <td key={c.key} className={cls}>
-                        {c.fmt(r)}
-                      </td>
-                    );
-                  })}
-                  <td className="px-3 py-2 text-right text-neutral-400">
-                    <Spark values={r.spark} />
-                  </td>
-                </tr>
-              ))}
+                    <td
+                      className={
+                        "px-2 py-1.5 whitespace-nowrap sticky left-0 bg-neutral-900 " +
+                        (r.stale ? "text-neutral-600" : "text-neutral-200")
+                      }
+                      title={r.stale ? `${tip} · last played ${ymdToStr(r.lastPlayed) || "n/a"}` : tip}
+                    >
+                      {r.pin && <span className="text-amber-500 mr-1" title={r.pinNote}>●</span>}
+                      {r.name}
+                      <span className="block text-[10px] text-neutral-600 leading-none mt-0.5">
+                        {r.pos || (r.stale ? `last ${ymdToStr(r.lastPlayed) || "?"}` : "")}
+                      </span>
+                    </td>
+                    {cols.map((c) => {
+                      const raw = c.num(r);
+                      let cls = cellCls;
+                      if (c.key === "delta" && raw != null) {
+                        const good = c.deltaGoodDir === 1 ? raw > 0 : raw < 0;
+                        cls += good ? " text-emerald-400" : " text-red-400";
+                      } else {
+                        cls += " text-neutral-300";
+                      }
+                      return (
+                        <td key={c.key} className={cls}>
+                          {c.fmt(r)}
+                        </td>
+                      );
+                    })}
+                    <td className="px-2 py-1.5 text-right text-neutral-400">
+                      <Spark values={r.spark} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {meta && (
+      {team.data && (
         <div className="text-xs text-neutral-600">
-          {meta.season} season · MLB Stats API · fetched{" "}
-          {new Date(meta.fetchedAt).toLocaleTimeString()}
+          {team.data.season} season · MLB Stats API · neutral-park OPS+/ERA+/FIP vs league context · fetched{" "}
+          {new Date(team.data.fetchedAt).toLocaleTimeString()}
           {tab === "farm" && " · ● = prospect watchlist"}
         </div>
       )}

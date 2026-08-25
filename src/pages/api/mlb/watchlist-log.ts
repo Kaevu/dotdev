@@ -35,6 +35,7 @@ async function fetchPlayerLog(id: number, group: string, season: number, sportId
         s.stat.baseOnBalls ?? 0,
         s.stat.strikeOuts ?? 0,
         s.stat.homeRuns ?? 0,
+        s.stat.hitBatsmen ?? 0,
       ]);
     }
     return splits.map((s) => [
@@ -51,6 +52,7 @@ async function fetchPlayerLog(id: number, group: string, season: number, sportId
       s.stat.strikeOuts ?? 0,
       s.stat.stolenBases ?? 0,
       s.stat.sacFlies ?? 0,
+      s.stat.intentionalWalks ?? 0,
     ]);
   } catch {
     return [];
