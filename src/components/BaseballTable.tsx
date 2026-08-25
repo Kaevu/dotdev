@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AFFILIATES, WATCHLIST, YANKEES } from "../lib/mlb/config";
+import {
+  AFFILIATES,
+  MLB_TEAM_ALIASES,
+  MLB_TEAM_IDS,
+  WATCHLIST,
+  YANKEES,
+  teamDef,
+} from "../lib/mlb/config";
 import {
   fipFrom,
   hitLine,
@@ -33,6 +40,16 @@ type LeagueCtx = {
 };
 type CtxPayload = { sports: Record<string, Record<string, LeagueCtx>> };
 
+type OrgEntry = {
+  id: number;
+  name: string;
+  pos: string;
+  teamShort: string;
+  kind: "hitter" | "pitcher";
+  sportId: number;
+  leagueId: number;
+};
+
 const DASH = "—";
 const f3 = (x: number | null) => (x == null ? DASH : x.toFixed(3).replace(/^0\./, "."));
 const f2 = (x: number | null) => (x == null ? DASH : x.toFixed(2));
@@ -54,6 +71,7 @@ function ymdToStr(ymd: number | null): string {
 }
 
 const STALE_DAYS = 21 * 24 * 60 * 60 * 1000;
+const DELTA_MIN_SAMPLE = 15;
 
 function usePayload<T>(url: string | null) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
@@ -111,7 +129,10 @@ type Row = {
   pin: boolean;
   pinNote: string;
   sid: number;
+  leagueId: number;
   cur: HitLine | PitchLine;
+  seasonLine: HitLine | PitchLine;
+  prevVal: number | null;
   delta: number | null;
   spark: number[];
   stale: boolean;
@@ -123,7 +144,8 @@ type Col = {
   key: string;
   label: string;
   num: (r: Row) => number | null;
-  fmt: (r: Row, ctx?: LeagueCtx) => string;
+  fmt: (r: Row) => string;
+  title?: (r: Row) => string;
   deltaGoodDir?: 1 | -1;
 };
 
@@ -141,25 +163,23 @@ export default function BaseballTable() {
 
   const presets = mode === "games" ? GAMES_PRESETS : PA_PRESETS;
 
-  const teamId = tab === "yanks" ? YANKEES.id : affId;
-  const teamSportId =
-    tab === "yanks" ? YANKEES.sportId : AFFILIATES.find((t) => t.id === affId)?.sportId ?? 1;
+  const activeDef = tab === "yanks" ? YANKEES : AFFILIATES.find((t) => t.id === affId)!;
 
-  const teamUrl = `/api/mlb/team-log?teamId=${teamId}&group=${group === "hitters" ? "hitting" : "pitching"}`;
+  const teamUrl = `/api/mlb/team-log?teamId=${activeDef.id}&group=${group === "hitters" ? "hitting" : "pitching"}`;
   const watchUrl = tab === "farm" ? "/api/mlb/watchlist-log" : null;
 
   const ctxIds =
     tab === "farm"
-      ? [...new Set([teamSportId, ...WATCHLIST.map((w) => w.sportId)])].sort((a, b) => a - b)
-      : [teamSportId];
+      ? [...new Set([activeDef.sportId, ...WATCHLIST.map((w) => w.sportId)])].sort((a, b) => a - b)
+      : [activeDef.sportId];
   const ctxUrl = `/api/mlb/league-context?sportIds=${ctxIds.join(",")}`;
 
   const team = usePayload<Payload>(teamUrl);
   const watch = usePayload<Payload>(watchUrl);
   const ctx = usePayload<CtxPayload>(ctxUrl);
 
-  function leagueFor(r: Row): LeagueCtx | undefined {
-    return ctx.data?.sports?.[String(r.sid)];
+  function leagueFor(sid: number, leagueId: number): LeagueCtx | undefined {
+    return ctx.data?.sports?.[String(sid)]?.[String(leagueId)];
   }
 
   const rows: Row[] = useMemo(() => {
@@ -193,13 +213,21 @@ export default function BaseballTable() {
       }
 
       let cur: HitLine | PitchLine;
+      let seasonLine: HitLine | PitchLine;
       let delta: number | null = null;
+      let prevVal: number | null = null;
       let spark: number[] = [];
 
       if (group === "hitters") {
         cur = hitLine(win);
+        seasonLine = hitLine(g);
         const pl = hitLine(prev);
-        delta = cur.ops != null && pl.ops != null ? cur.ops - pl.ops : null;
+        prevVal = pl.ops;
+        const okSample =
+          (cur as HitLine).pa >= DELTA_MIN_SAMPLE &&
+          (pl as HitLine).pa >= DELTA_MIN_SAMPLE;
+        delta =
+          okSample && cur.ops != null && pl.ops != null ? cur.ops - pl.ops : null;
         let h = 0,
           ab = 0,
           tb = 0,
@@ -220,8 +248,14 @@ export default function BaseballTable() {
         });
       } else {
         cur = pitchLine(win);
+        seasonLine = pitchLine(g);
         const pl = pitchLine(prev);
-        delta = cur.era != null && pl.era != null ? cur.era - pl.era : null;
+        prevVal = pl.era;
+        const okSample =
+          (cur as PitchLine).bf >= DELTA_MIN_SAMPLE &&
+          (pl as PitchLine).bf >= DELTA_MIN_SAMPLE;
+        delta =
+          okSample && cur.era != null && pl.era != null ? cur.era - pl.era : null;
         let er = 0;
         let outs = 0;
         spark = win.map((gm) => {
@@ -235,14 +269,18 @@ export default function BaseballTable() {
       const stale = !lpMs || now - lpMs > STALE_DAYS;
 
       const wl = WATCHLIST.find((w) => w.id === player.id);
+      const td = tab === "yanks" ? YANKEES : AFFILIATES.find((t) => t.id === affId)!;
       return {
         id: player.id,
         name: player.name,
         pos: player.pos ?? "",
         pin,
         pinNote: player.note ?? wl?.note ?? "",
-        sid: wl ? wl.sportId : teamSportId,
+        sid: wl ? wl.sportId : td.sportId,
+        leagueId: wl ? wl.leagueId : td.leagueId,
         cur,
+        seasonLine,
+        prevVal,
         delta,
         spark,
         stale,
@@ -250,7 +288,7 @@ export default function BaseballTable() {
         winGames: win,
       };
     });
-  }, [team.data, watch.data, group, mode, winVal, teamSportId]);
+  }, [team.data, watch.data, group, mode, winVal, tab, affId]);
 
   const cols: Col[] = useMemo(() => {
     if (group === "hitters") {
@@ -267,13 +305,13 @@ export default function BaseballTable() {
           key: "opsPlus",
           label: "OPS+",
           num: (r) => {
-            const lg = leagueFor(r);
+            const lg = leagueFor(r.sid, r.leagueId);
             const cur = r.cur as HitLine;
             if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return null;
             return 100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1);
           },
           fmt: (r) => {
-            const lg = leagueFor(r);
+            const lg = leagueFor(r.sid, r.leagueId);
             const cur = r.cur as HitLine;
             if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return DASH;
             return String(Math.round(100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1)));
@@ -285,6 +323,7 @@ export default function BaseballTable() {
           label: "ΔOPS",
           num: (r) => r.delta,
           fmt: (r) => pts(r.delta),
+          title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "PA"}: ${f3(r.prevVal)} OPS` : ""),
           deltaGoodDir: 1,
         },
       ];
@@ -298,13 +337,13 @@ export default function BaseballTable() {
         key: "eraPlus",
         label: "ERA+",
         num: (r) => {
-          const lg = leagueFor(r);
+          const lg = leagueFor(r.sid, r.leagueId);
           const era = (r.cur as PitchLine).era;
           if (!lg?.lgERA || era == null || era === 0) return null;
           return (100 * lg.lgERA) / era;
         },
         fmt: (r) => {
-          const lg = leagueFor(r);
+          const lg = leagueFor(r.sid, r.leagueId);
           const era = (r.cur as PitchLine).era;
           if (!lg?.lgERA || era == null || era === 0) return DASH;
           return String(Math.round((100 * lg.lgERA) / era));
@@ -314,12 +353,12 @@ export default function BaseballTable() {
         key: "fip",
         label: "FIP",
         num: (r) => {
-          const lg = leagueFor(r);
+          const lg = leagueFor(r.sid, r.leagueId);
           if (!lg?.fipConst) return null;
           return fipFrom(r.winGames, lg.fipConst);
         },
         fmt: (r) => {
-          const lg = leagueFor(r);
+          const lg = leagueFor(r.sid, r.leagueId);
           if (!lg?.fipConst) return DASH;
           return f2(fipFrom(r.winGames, lg.fipConst));
         },
@@ -331,11 +370,12 @@ export default function BaseballTable() {
         label: "ΔERA",
         num: (r) => r.delta,
         fmt: (r) => (r.delta == null ? DASH : (r.delta > 0 ? "+" : "") + r.delta.toFixed(2)),
+        title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "BF"}: ${f2(r.prevVal)} ERA` : ""),
         deltaGoodDir: -1,
       },
     ];
     return c;
-  }, [group, ctx.data]);
+  }, [group, ctx.data, winVal, mode]);
 
   const sorted = useMemo(() => {
     const active = cols.find((c) => c.key === sortKey);
@@ -360,8 +400,176 @@ export default function BaseballTable() {
     }
   }
 
-  const loading = team.loading || watch.loading;
-  const error = team.error || watch.error;
+  function rowTip(r: Row): string {
+    const winLabel = `${mode === "games" ? `last ${winVal} G` : `min ${winVal} ${group === "hitters" ? "PA" : "BF"}`}`;
+    if (group === "hitters") {
+      const c = r.cur as HitLine;
+      const s = r.seasonLine as HitLine;
+      const wXbh = r.winGames.reduce((a, gm) => a + gm[4] + gm[5] + gm[6], 0);
+      return [
+        `${f3(c.avg)}/${f3(c.obp)}/${f3(c.slg)} · ${wXbh} XBH · ${c.sb} SB · ${c.rbi} RBI in ${c.g} G (${winLabel})`,
+        `year: ${f3(s.avg)}/${f3(s.obp)}/${f3(s.slg)} · ${s.rbi} RBI · ${s.sb} SB · ${s.hr} HR in ${s.g} G`,
+      ].join("\n");
+    }
+    const c = r.cur as PitchLine;
+    const s = r.seasonLine as PitchLine;
+    return [
+      `${c.ip} IP · ${c.so} K · ${c.bb} BB · ${c.er} ER in ${c.g} G (${winLabel})`,
+      `year: ${s.ip} IP · ${s.so} K · ${s.bb} BB · ${s.er} ER · ${f2(s.era)} ERA in ${s.g} G`,
+    ].join("\n");
+  }
+
+  const [queryText, setQueryText] = useState("");
+  const [orgIdx, setOrgIdx] = useState<OrgEntry[] | null>(null);
+  const [idxLoading, setIdxLoading] = useState(false);
+  const [qBusy, setQBusy] = useState(false);
+  const [qError, setQError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<OrgEntry[] | null>(null);
+
+  type ResultRow = {
+    key: string;
+    name: string;
+    pos: string;
+    teamShort: string;
+    sid: number;
+    leagueId: number;
+    kind: "hitter" | "pitcher";
+    label: string;
+    note: string | null;
+    line: HitLine | PitchLine;
+    games: number[][];
+  };
+  const [results, setResults] = useState<ResultRow[]>([]);
+
+  async function ensureIndex(): Promise<OrgEntry[]> {
+    if (orgIdx) return orgIdx;
+    if (idxLoading) return [];
+    setIdxLoading(true);
+    try {
+      const r = await fetch("/api/mlb/org-index");
+      const j = await r.json();
+      const players: OrgEntry[] = j.players ?? [];
+      setOrgIdx(players);
+      return players;
+    } catch (e: any) {
+      setQError(String(e?.message || e));
+      return [];
+    } finally {
+      setIdxLoading(false);
+    }
+  }
+
+  function parseQuery(raw: string) {
+    let s = ` ${raw.toLowerCase().trim()} `;
+    const q = { namePart: "", nGames: null as number | null, sit: null as "vl" | "vr" | null, opponentId: null as number | null, opponentLabel: null as string | null };
+    const win = s.match(/last\s+(\d+)\s*(?:games?|g)\b/);
+    if (win) {
+      q.nGames = parseInt(win[1], 10);
+      s = s.replace(win[0], " ");
+    }
+    const hand = s.match(/(?:vs\.?|against|v\.?)\s+(lhp|rhp|left(?:y|ies)?|right(?:y|ies)?)\b/);
+    if (hand) {
+      q.sit = hand[1].startsWith("l") ? "vl" : "vr";
+      s = s.replace(hand[0], " ");
+    }
+    const opp = s.match(/(?:vs\.?|against|v\.?)\s+([a-z'.\s]+?)\s*$/);
+    if (opp && !q.sit) {
+      const tok = opp[1].trim();
+      const full = MLB_TEAM_ALIASES[tok] ?? Object.keys(MLB_TEAM_IDS).find((k) => k === tok) ?? Object.keys(MLB_TEAM_IDS).find((k) => tok.length >= 4 && k.includes(tok));
+      if (full) {
+        q.opponentId = MLB_TEAM_IDS[full];
+        q.opponentLabel = full.replace(/\b\w/g, (c) => c.toUpperCase());
+        s = s.replace(opp[0], " ");
+      }
+    }
+    q.namePart = s.replace(/[^a-z'\-\s]/g, " ").replace(/\s+/g, " ").trim();
+    return q;
+  }
+
+  async function runQuery(preset?: OrgEntry) {
+    setQError(null);
+    const idx = await ensureIndex();
+    if (!idx.length && !preset) {
+      setQError("player index unavailable");
+      return;
+    }
+    if (!queryText.trim() && !preset) return;
+
+    let player: OrgEntry | undefined = preset ?? undefined;
+    let pq = preset
+      ? { namePart: "", nGames: null as number | null, sit: null as "vl" | "vr" | null, opponentId: null as number | null, opponentLabel: null as string | null }
+      : parseQuery(queryText);
+
+    if (!player) {
+      const matches = pq.namePart ? idx.filter((p) => p.name.toLowerCase().includes(pq.namePart)) : [];
+      if (matches.length === 0) {
+        setQError(`no org player matching "${pq.namePart}"`);
+        return;
+      }
+      const exact = matches.find((m) => m.name.toLowerCase() === pq.namePart);
+      if (!exact && matches.length > 1) {
+        setCandidates(matches.slice(0, 6));
+        return;
+      }
+      setCandidates(null);
+      player = exact ?? matches[0];
+    }
+
+    setQBusy(true);
+    try {
+      const group = player.kind === "pitcher" ? "pitching" : "hitting";
+      const lr = await fetch(`/api/mlb/player-log?playerId=${player.id}&group=${group}&sportId=${player.sportId}`).then((r) => r.json());
+      let games: number[][] = lr.games ?? [];
+      const labels: string[] = [];
+
+      if (pq.sit) {
+        const sr = await fetch(`/api/mlb/player-splits?playerId=${player.id}&group=${group}&sitCode=${pq.sit}&sportId=${player.sportId}`).then((r) => r.json());
+        const agg = sr.games?.[0];
+        if (!agg) {
+          setQError("no handedness split data for that player");
+          return;
+        }
+        games = [agg];
+        labels.push(`season ${pq.sit === "vl" ? "vs LHP" : "vs RHP"}`);
+      } else {
+        if (pq.nGames) {
+          games = windowByGames(games, pq.nGames);
+          labels.push(`last ${pq.nGames} G`);
+        }
+        if (pq.opponentId) {
+          games = games.filter((g) => g[group === "pitching" ? 9 : 14] === pq.opponentId);
+          labels.push(`vs ${pq.opponentLabel}`);
+        }
+        if (labels.length === 0) labels.push(`${lr.season} season`);
+      }
+
+      const line = group === "pitching" ? pitchLine(games) : hitLine(games);
+      const note = pq.sit && (pq.nGames || pq.opponentId) ? "handedness splits are season aggregates — other filters ignored" : null;
+
+      setResults((prev) =>
+        [
+          {
+            key: `${player!.id}-${labels.join("-")}-${Date.now()}`,
+            name: player!.name,
+            pos: player!.pos,
+            teamShort: player!.teamShort,
+            sid: player!.sportId,
+            leagueId: player!.leagueId,
+            kind: player!.kind,
+            label: labels.join(" · "),
+            note,
+            line,
+            games,
+          },
+          ...prev,
+        ].slice(0, 8)
+      );
+    } catch (e: any) {
+      setQError(String(e?.message || e));
+    } finally {
+      setQBusy(false);
+    }
+  }
 
   const chip = (activeState: boolean) =>
     "text-xs px-3 py-1 rounded border transition-colors " +
@@ -370,6 +578,104 @@ export default function BaseballTable() {
       : "text-neutral-400 border-neutral-800 hover:text-neutral-200");
 
   const cellCls = "px-2 py-1.5 text-right whitespace-nowrap tabular-nums";
+
+  const loading = team.loading || watch.loading;
+  const error = team.error || watch.error;
+
+  type RCol = {
+    label: string;
+    f: (line: any, rr: ResultRow) => string;
+  };
+
+  const resultCols = (kind: "hitter" | "pitcher"): RCol[] =>
+    kind === "hitter"
+      ? [
+          { label: "G", f: (l) => String(l.g) },
+          { label: "PA", f: (l) => String(l.pa) },
+          { label: "HR", f: (l) => String(l.hr) },
+          { label: "BB%", f: (l) => pct(l.bbPct) },
+          { label: "K%", f: (l) => pct(l.kPct) },
+          { label: "AVG", f: (l) => f3(l.avg) },
+          { label: "OBP", f: (l) => f3(l.obp) },
+          { label: "SLG", f: (l) => f3(l.slg) },
+          { label: "OPS", f: (l) => f3(l.ops) },
+          {
+            label: "OPS+",
+            f: (l, rr) => {
+              const lg = leagueFor(rr.sid, rr.leagueId);
+              if (!lg?.lgOBP || !lg?.lgSLG || l.obp == null || l.slg == null) return DASH;
+              return String(Math.round(100 * (l.obp / lg.lgOBP + l.slg / lg.lgSLG - 1)));
+            },
+          },
+          { label: "wOBA", f: (l) => f3(l.woba) },
+        ]
+      : [
+          { label: "G", f: (l) => String(l.g) },
+          { label: "IP", f: (l) => l.ip },
+          { label: "SO", f: (l) => String(l.so) },
+          { label: "ERA", f: (l) => f2(l.era) },
+          {
+            label: "ERA+",
+            f: (l, rr) => {
+              const lg = leagueFor(rr.sid, rr.leagueId);
+              if (!lg?.lgERA || l.era == null || l.era === 0) return DASH;
+              return String(Math.round((100 * lg.lgERA) / l.era));
+            },
+          },
+          {
+            label: "FIP",
+            f: (l, rr) => {
+              const lg = leagueFor(rr.sid, rr.leagueId);
+              if (!lg?.fipConst) return DASH;
+              return f2(fipFrom(rr.games, lg.fipConst));
+            },
+          },
+          { label: "WHIP", f: (l) => f2(l.whip) },
+          { label: "K/9", f: (l) => f1(l.k9) },
+        ];
+
+  function resultSection(kind: "hitter" | "pitcher") {
+    const rowsOfKind = results.filter((r) => r.kind === kind);
+    if (rowsOfKind.length === 0) return null;
+    const colsR = resultCols(kind);
+    return (
+      <div key={kind} className="overflow-x-auto rounded border border-neutral-800 mt-2">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-neutral-500">
+              <th className="text-left font-normal px-2 py-1.5 sticky left-0 bg-neutral-900">Query</th>
+              {colsR.map((c) => (
+                <th key={c.label} className="font-normal px-2 py-1.5 text-right whitespace-nowrap">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rowsOfKind.map((rr) => (
+              <tr key={rr.key} className="border-t border-neutral-800">
+                <td className="px-2 py-1.5 whitespace-nowrap sticky left-0 bg-neutral-900">
+                  <span className="text-neutral-200">{rr.name}</span>
+                  <span className="text-neutral-600 ml-1">{rr.teamShort}</span>
+                  <span className="block text-[10px] text-neutral-500 leading-none mt-0.5">{rr.label}</span>
+                  {rr.note && (
+                    <span className="block text-[10px] text-amber-600/80 leading-tight mt-0.5" title={rr.note}>
+                      ⚠ season agg
+                    </span>
+                  )}
+                </td>
+                {colsR.map((c) => (
+                  <td key={c.label} className={cellCls + " text-neutral-300"}>
+                    {c.f(rr.line, rr)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -392,6 +698,60 @@ export default function BaseballTable() {
               </option>
             ))}
           </select>
+        )}
+      </div>
+
+      <div className="rounded border border-neutral-800 p-3 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            value={queryText}
+            onChange={(e) => setQueryText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runQuery();
+            }}
+            onFocus={() => ensureIndex()}
+            placeholder='try "spencer jones last 43 games" · "judge vs orioles" · "kilby vs lhp"'
+            className="flex-1 min-w-[240px] bg-transparent outline-none border-b border-subtle px-0 py-1 fg-secondary focus:text-neutral-200 text-sm"
+          />
+          <button
+            onClick={() => runQuery()}
+            disabled={qBusy}
+            className="text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-200 disabled:opacity-50"
+          >
+            {qBusy ? "…" : "Ask"}
+          </button>
+          {results.length > 0 && (
+            <button onClick={() => setResults([])} className="text-xs text-neutral-600 hover:text-neutral-400">
+              clear
+            </button>
+          )}
+        </div>
+
+        {candidates && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-neutral-500">multiple matches:</span>
+            {candidates.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  setCandidates(null);
+                  runQuery(c);
+                }}
+                className={chip(false)}
+              >
+                {c.name} · {c.teamShort}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {qError && <div className="text-xs text-red-400">{qError}</div>}
+
+        {results.length > 0 && (
+          <>
+            {resultSection("hitter")}
+            {resultSection("pitcher")}
+          </>
         )}
       </div>
 
@@ -465,11 +825,7 @@ export default function BaseballTable() {
             </thead>
             <tbody>
               {sorted.map((r) => {
-                const hl = r.cur as HitLine;
-                const tip =
-                  group === "hitters"
-                    ? `${r.name} · ${hl.g} G · ${hl.ab}/${hl.h} · ${hl.rbi} RBI · ${hl.sb} SB`
-                    : `${r.name} · ${r.cur.g} G`;
+                const tip = `${rowTip(r)}${r.stale ? `\nlast played ${ymdToStr(r.lastPlayed) || "n/a"}` : ""}`;
                 return (
                   <tr
                     key={`${tab}-${r.id}`}
@@ -480,7 +836,7 @@ export default function BaseballTable() {
                         "px-2 py-1.5 whitespace-nowrap sticky left-0 bg-neutral-900 " +
                         (r.stale ? "text-neutral-600" : "text-neutral-200")
                       }
-                      title={r.stale ? `${tip} · last played ${ymdToStr(r.lastPlayed) || "n/a"}` : tip}
+                      title={tip}
                     >
                       {r.pin && <span className="text-amber-500 mr-1" title={r.pinNote}>●</span>}
                       {r.name}
@@ -497,8 +853,9 @@ export default function BaseballTable() {
                       } else {
                         cls += " text-neutral-300";
                       }
+                      const t = c.title?.(r);
                       return (
-                        <td key={c.key} className={cls}>
+                        <td key={c.key} className={cls} title={t}>
                           {c.fmt(r)}
                         </td>
                       );
