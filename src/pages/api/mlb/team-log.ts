@@ -2,21 +2,27 @@ export const prerender = false;
 
 import type { APIRoute } from "astro";
 import { KNOWN_TEAM_IDS, currentSeason, sportIdForTeam } from "../../../lib/mlb/config";
+import { STATSAPI, fetchJson, playerGameLog } from "../../../lib/mlb/api-shared";
 
-const STATSAPI = "https://statsapi.mlb.com/api/v1";
 const TTL_MS = 60 * 60 * 1000;
+const MAX_ENTRIES = 24;
 
 type CacheEntry = { at: number; body: string };
-const cache: Record<string, CacheEntry> = {};
+const cache = new Map<string, CacheEntry>();
+const inflight = new Set<string>();
 
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`upstream ${res.status}`);
-  return res.json();
+function prune() {
+  while (cache.size > MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
 }
 
-function ymd(dateStr: string): number {
-  return Number(dateStr.replaceAll("-", "")) || 0;
+function jsonRes(body: string): Response {
+  return new Response(body, {
+    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=600" },
+  });
 }
 
 type RosterPerson = {
@@ -24,54 +30,56 @@ type RosterPerson = {
   position: { abbreviation: string };
 };
 
-async function fetchPlayerLog(
-  id: number,
+async function buildPlayers(
+  wanted: RosterPerson[],
   group: string,
-  season: number,
+  seasonNum: number,
   sportId: number
-): Promise<number[][]> {
-  try {
-    const json = await fetchJson(
-      `${STATSAPI}/people/${id}/stats?stats=gameLog&group=${group}&season=${season}&sportId=${sportId}`
-    );
-    const splits: any[] = json.stats?.[0]?.splits ?? [];
-    if (group === "pitching") {
-      return splits.map((s) => [
-        ymd(s.date),
-        s.stat.outs ?? 0,
-        s.stat.battersFaced ?? 0,
-        s.stat.hits ?? 0,
-        s.stat.earnedRuns ?? 0,
-        s.stat.baseOnBalls ?? 0,
-        s.stat.strikeOuts ?? 0,
-        s.stat.homeRuns ?? 0,
-        s.stat.hitBatsmen ?? 0,
-        s.opponent?.id ?? 0,
-      ]);
-    }
-    return splits.map((s) => [
-      ymd(s.date),
-      s.stat.plateAppearances ?? 0,
-      s.stat.atBats ?? 0,
-      s.stat.hits ?? 0,
-      s.stat.doubles ?? 0,
-      s.stat.triples ?? 0,
-      s.stat.homeRuns ?? 0,
-      s.stat.rbi ?? 0,
-      s.stat.baseOnBalls ?? 0,
-      s.stat.hitByPitch ?? 0,
-      s.stat.strikeOuts ?? 0,
-      s.stat.stolenBases ?? 0,
-      s.stat.sacFlies ?? 0,
-      s.stat.intentionalWalks ?? 0,
-      s.opponent?.id ?? 0,
-    ]);
-  } catch {
-    return [];
-  }
+) {
+  return Promise.all(
+    wanted.map(async (p) => {
+      const games = await playerGameLog(p.person.id, group, seasonNum, sportId);
+      return {
+        id: p.person.id,
+        name: p.person.fullName,
+        pos: p.position?.abbreviation ?? "",
+        lastPlayed: games.length ? games[games.length - 1][0] : null,
+        games,
+      };
+    })
+  );
 }
 
-export const GET: APIRoute = async ({ request }) => {
+async function computeBody(
+  teamId: number,
+  group: string,
+  seasonParam: number | undefined
+): Promise<{ body: string; storeKeys: string[] }> {
+  const season = seasonParam ?? currentSeason();
+  const bucket = Math.floor(Date.now() / TTL_MS);
+  const sportId = sportIdForTeam(teamId);
+
+  const rosterJson = await fetchJson(`${STATSAPI}/teams/${teamId}/roster?rosterType=active`);
+  const isPitcher = (p: RosterPerson) => p.position?.abbreviation === "P";
+  const wanted: RosterPerson[] = ((rosterJson.roster ?? []) as RosterPerson[])
+    .filter((p) => (group === "pitching" ? isPitcher(p) : !isPitcher(p)))
+    .slice(0, 40);
+
+  let players = await buildPlayers(wanted, group, season, sportId);
+  let seasonUsed = season;
+  if (!seasonParam && players.every((p) => p.games.length === 0)) {
+    const prior = await buildPlayers(wanted, group, season - 1, sportId);
+    if (prior.some((p) => p.games.length > 0)) {
+      players = prior;
+      seasonUsed = season - 1;
+    }
+  }
+
+  const body = JSON.stringify({ teamId, group, season: seasonUsed, fetchedAt: new Date().toISOString(), players });
+  return { body, storeKeys: [`${teamId}:${group}:${seasonUsed}:${bucket}`] };
+}
+
+export const GET: APIRoute = async ({ request, locals }) => {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get("teamId"));
   const group = url.searchParams.get("group") === "pitching" ? "pitching" : "hitting";
@@ -85,72 +93,82 @@ export const GET: APIRoute = async ({ request }) => {
     );
   }
 
+  const runtime = (locals as any)?.runtime;
+  const cfCtx = runtime?.ctx;
+  const waitUntil = cfCtx?.waitUntil?.bind(cfCtx) ?? null;
+  const edge = typeof caches !== "undefined" ? (caches as any).default : null;
+
   const bucket = Math.floor(Date.now() / TTL_MS);
-  const sportId = sportIdForTeam(teamId);
-  const key = `${teamId}:${group}:${season}:${bucket}`;
-  const hit = cache[key];
-  if (hit) {
-    return new Response(hit.body, {
-      headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=600" },
-    });
+  const baseKey = `${teamId}:${group}:${season}`;
+  const key = `${baseKey}:${bucket}`;
+
+  function recompute(): Promise<void> {
+    if (inflight.has(baseKey)) return Promise.resolve();
+    inflight.add(baseKey);
+    const task = computeBody(teamId, group, seasonParam)
+      .then(async ({ body, storeKeys }) => {
+        for (const k of storeKeys) cache.set(k, { at: Date.now(), body });
+        prune();
+        if (edge) {
+          try {
+            await edge.put(request, new Response(body, { headers: { "Content-Type": "application/json" } }));
+          } catch {}
+        }
+      })
+      .catch(() => {})
+      .finally(() => inflight.delete(baseKey));
+    if (waitUntil) waitUntil(task);
+    return task;
   }
 
-  let rosterJson: any;
+  // L1: isolate memory — fresh hit
+  const mem = cache.get(key);
+  if (mem) return jsonRes(mem.body);
+
+  // L1 stale: serve immediately, refresh in background
+  for (const [k, entry] of cache) {
+    if (k.startsWith(`${baseKey}:`)) {
+      recompute();
+      return jsonRes(entry.body);
+    }
+  }
+
+  // L2: Cloudflare edge cache — shared across isolates
+  if (edge) {
+    try {
+      const m = await edge.match(request);
+      if (m) {
+        const body = await m.text();
+        let age = Number.POSITIVE_INFINITY;
+        try {
+          age = Date.now() - Date.parse(JSON.parse(body).fetchedAt);
+        } catch {}
+        if (age < TTL_MS) {
+          cache.set(key, { at: Date.now(), body });
+          prune();
+          return jsonRes(body);
+        }
+        recompute();
+        return jsonRes(body);
+      }
+    } catch {}
+  }
+
+  // Miss: compute synchronously
   try {
-    rosterJson = await fetchJson(`${STATSAPI}/teams/${teamId}/roster?rosterType=active`);
+    const { body, storeKeys } = await computeBody(teamId, group, seasonParam);
+    for (const k of storeKeys) cache.set(k, { at: Date.now(), body });
+    prune();
+    if (edge) {
+      try {
+        await edge.put(request, new Response(body, { headers: { "Content-Type": "application/json" } }));
+      } catch {}
+    }
+    return jsonRes(body);
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: "roster fetch failed", message: String(e?.message || e) }), {
+    return new Response(JSON.stringify({ error: "fetch failed", message: String(e?.message || e) }), {
       status: 502,
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  const isPitcher = (p: RosterPerson) => p.position?.abbreviation === "P";
-  const wanted: RosterPerson[] = ((rosterJson.roster ?? []) as RosterPerson[])
-    .filter((p) => (group === "pitching" ? isPitcher(p) : !isPitcher(p)))
-    .slice(0, 40);
-
-  let players = await Promise.all(
-    wanted.map(async (p) => {
-      const games = await fetchPlayerLog(p.person.id, group, season, sportId);
-      return {
-        id: p.person.id,
-        name: p.person.fullName,
-        pos: p.position?.abbreviation ?? "",
-        lastPlayed: games.length ? games[games.length - 1][0] : null,
-        games,
-      };
-    })
-  );
-
-  if (!seasonParam && players.every((p) => p.games.length === 0)) {
-    const prior = season - 1;
-    players = await Promise.all(
-      wanted.map(async (p) => {
-        const games = await fetchPlayerLog(p.person.id, group, prior, sportId);
-        return {
-          id: p.person.id,
-          name: p.person.fullName,
-          pos: p.position?.abbreviation ?? "",
-          lastPlayed: games.length ? games[games.length - 1][0] : null,
-          games,
-        };
-      })
-    );
-    if (players.some((p) => p.games.length > 0)) {
-      const body = JSON.stringify({ teamId, group, season: prior, fetchedAt: new Date().toISOString(), players });
-      cache[`${teamId}:${group}:${prior}:${bucket}`] = { at: Date.now(), body };
-      return new Response(body, {
-        headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=600" },
-      });
-    }
-  }
-
-  const body = JSON.stringify({ teamId, group, season, fetchedAt: new Date().toISOString(), players });
-  for (const k of Object.keys(cache)) delete cache[k];
-  cache[key] = { at: Date.now(), body };
-
-  return new Response(body, {
-    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=600" },
-  });
 };

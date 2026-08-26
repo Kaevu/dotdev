@@ -1,12 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  AFFILIATES,
-  MLB_TEAM_ALIASES,
-  MLB_TEAM_IDS,
-  WATCHLIST,
-  YANKEES,
-  teamDef,
-} from "../lib/mlb/config";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AFFILIATES, WATCHLIST, YANKEES } from "../lib/mlb/config";
 import {
   fipFrom,
   hitLine,
@@ -14,6 +7,7 @@ import {
   prevWindowByBF,
   prevWindowByGames,
   prevWindowByPA,
+  windowByAB,
   windowByBF,
   windowByGames,
   windowByPA,
@@ -132,6 +126,7 @@ type Row = {
   leagueId: number;
   cur: HitLine | PitchLine;
   seasonLine: HitLine | PitchLine;
+  viewGames: number[][];
   prevVal: number | null;
   delta: number | null;
   spark: number[];
@@ -149,8 +144,52 @@ type Col = {
   deltaGoodDir?: 1 | -1;
 };
 
+function splitLabel(code: "vl" | "vr", kind: "hitter" | "pitcher"): string {
+  if (kind === "pitcher") return code === "vl" ? "vs LHB" : "vs RHB";
+  return code === "vl" ? "vs LHP" : "vs RHP";
+}
+
 const GAMES_PRESETS = [7, 14, 30];
 const PA_PRESETS = [20, 50, 100];
+
+const cellCls = "px-1.5 py-1.5 text-right whitespace-nowrap tabular-nums";
+
+function TableSkeleton({ labels, nameLabel }: { labels: string[]; nameLabel: string }) {
+  return (
+    <div className="overflow-x-auto bg-neutral-900 rounded border border-neutral-800 animate-pulse">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-neutral-500">
+            <th className="text-left font-normal px-1.5 py-2 sticky left-0 bg-neutral-900 min-w-[140px]">{nameLabel}</th>
+            {labels.map((l) => (
+              <th key={l} className="font-normal px-1.5 py-2 text-right whitespace-nowrap">
+                {l}
+              </th>
+            ))}
+            <th className="font-normal px-1.5 py-2 text-right">Form</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <tr key={i} className="border-t border-neutral-800">
+              <td className="px-1.5 py-2 sticky left-0 bg-neutral-900">
+                <div className="h-3 w-24 rounded bg-neutral-800" />
+              </td>
+              {labels.map((l) => (
+                <td key={l} className={cellCls}>
+                  <div className="h-3 w-8 ml-auto rounded bg-neutral-800" />
+                </td>
+              ))}
+              <td className="px-1.5 py-2">
+                <div className="h-3 w-16 ml-auto rounded bg-neutral-800" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function BaseballTable() {
   const [tab, setTab] = useState<"yanks" | "farm">("yanks");
@@ -158,6 +197,7 @@ export default function BaseballTable() {
   const [group, setGroup] = useState<"hitters" | "pitchers">("hitters");
   const [mode, setMode] = useState<"games" | "pa">("games");
   const [winVal, setWinVal] = useState(14);
+  const [statScope, setStatScope] = useState<"form" | "season">("form");
   const [sortKey, setSortKey] = useState<string>("ops");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
 
@@ -234,7 +274,7 @@ export default function BaseballTable() {
           bb = 0,
           hbp = 0,
           sf = 0;
-        spark = win.map((gm) => {
+        spark = (statScope === "season" ? g : win).map((gm) => {
           ab += gm[2];
           h += gm[3];
           tb += gm[3] + gm[4] + 2 * gm[5] + 3 * gm[6];
@@ -258,7 +298,7 @@ export default function BaseballTable() {
           okSample && cur.era != null && pl.era != null ? cur.era - pl.era : null;
         let er = 0;
         let outs = 0;
-        spark = win.map((gm) => {
+        spark = (statScope === "season" ? g : win).map((gm) => {
           outs += gm[1];
           er += gm[4];
           return outs > 0 ? (er * 27) / outs : 0;
@@ -280,6 +320,7 @@ export default function BaseballTable() {
         leagueId: wl ? wl.leagueId : td.leagueId,
         cur,
         seasonLine,
+        viewGames: statScope === "season" ? player.games : win,
         prevVal,
         delta,
         spark,
@@ -288,63 +329,75 @@ export default function BaseballTable() {
         winGames: win,
       };
     });
-  }, [team.data, watch.data, group, mode, winVal, tab, affId]);
+  }, [team.data, watch.data, group, mode, winVal, statScope, tab, affId]);
 
   const cols: Col[] = useMemo(() => {
+    const viewLine = (r: Row): HitLine | PitchLine =>
+      statScope === "season" ? r.seasonLine : r.cur;
+    const deltaOps: Col = {
+      key: "delta",
+      label: "ΔOPS",
+      num: (r) => r.delta,
+      fmt: (r) => pts(r.delta),
+      title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "PA"}: ${f3(r.prevVal)} OPS` : ""),
+      deltaGoodDir: 1,
+    };
+    const deltaEra: Col = {
+      key: "delta",
+      label: "ΔERA",
+      num: (r) => r.delta,
+      fmt: (r) => (r.delta == null ? DASH : (r.delta > 0 ? "+" : "") + r.delta.toFixed(2)),
+      title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "BF"}: ${f2(r.prevVal)} ERA` : ""),
+      deltaGoodDir: -1,
+    };
     if (group === "hitters") {
       const c: Col[] = [
-        { key: "pa", label: "PA", num: (r) => (r.cur as HitLine).pa, fmt: (r) => String((r.cur as HitLine).pa) },
-        { key: "hr", label: "HR", num: (r) => (r.cur as HitLine).hr, fmt: (r) => String((r.cur as HitLine).hr) },
-        { key: "bbPct", label: "BB%", num: (r) => (r.cur as HitLine).bbPct, fmt: (r) => pct((r.cur as HitLine).bbPct) },
-        { key: "kPct", label: "K%", num: (r) => (r.cur as HitLine).kPct, fmt: (r) => pct((r.cur as HitLine).kPct) },
-        { key: "avg", label: "AVG", num: (r) => (r.cur as HitLine).avg, fmt: (r) => f3((r.cur as HitLine).avg) },
-        { key: "obp", label: "OBP", num: (r) => (r.cur as HitLine).obp, fmt: (r) => f3((r.cur as HitLine).obp) },
-        { key: "slg", label: "SLG", num: (r) => (r.cur as HitLine).slg, fmt: (r) => f3((r.cur as HitLine).slg) },
-        { key: "ops", label: "OPS", num: (r) => (r.cur as HitLine).ops, fmt: (r) => f3((r.cur as HitLine).ops) },
+        { key: "pa", label: "PA", num: (r) => (viewLine(r) as HitLine).pa, fmt: (r) => String((viewLine(r) as HitLine).pa) },
+        { key: "hr", label: "HR", num: (r) => (viewLine(r) as HitLine).hr, fmt: (r) => String((viewLine(r) as HitLine).hr) },
+        { key: "bbPct", label: "BB%", num: (r) => (viewLine(r) as HitLine).bbPct, fmt: (r) => pct((viewLine(r) as HitLine).bbPct) },
+        { key: "kPct", label: "K%", num: (r) => (viewLine(r) as HitLine).kPct, fmt: (r) => pct((viewLine(r) as HitLine).kPct) },
+        { key: "avg", label: "AVG", num: (r) => (viewLine(r) as HitLine).avg, fmt: (r) => f3((viewLine(r) as HitLine).avg) },
+        { key: "obp", label: "OBP", num: (r) => (viewLine(r) as HitLine).obp, fmt: (r) => f3((viewLine(r) as HitLine).obp) },
+        { key: "slg", label: "SLG", num: (r) => (viewLine(r) as HitLine).slg, fmt: (r) => f3((viewLine(r) as HitLine).slg) },
+        { key: "ops", label: "OPS", num: (r) => (viewLine(r) as HitLine).ops, fmt: (r) => f3((viewLine(r) as HitLine).ops) },
+        ...(statScope === "form" ? [deltaOps] : []),
         {
           key: "opsPlus",
           label: "OPS+",
           num: (r) => {
             const lg = leagueFor(r.sid, r.leagueId);
-            const cur = r.cur as HitLine;
+            const cur = viewLine(r) as HitLine;
             if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return null;
             return 100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1);
           },
           fmt: (r) => {
             const lg = leagueFor(r.sid, r.leagueId);
-            const cur = r.cur as HitLine;
+            const cur = viewLine(r) as HitLine;
             if (!lg?.lgOBP || !lg?.lgSLG || cur.obp == null || cur.slg == null) return DASH;
             return String(Math.round(100 * (cur.obp / lg.lgOBP + cur.slg / lg.lgSLG - 1)));
           },
         },
-        { key: "woba", label: "wOBA", num: (r) => (r.cur as HitLine).woba, fmt: (r) => f3((r.cur as HitLine).woba) },
-        {
-          key: "delta",
-          label: "ΔOPS",
-          num: (r) => r.delta,
-          fmt: (r) => pts(r.delta),
-          title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "PA"}: ${f3(r.prevVal)} OPS` : ""),
-          deltaGoodDir: 1,
-        },
+        { key: "woba", label: "wOBA", num: (r) => (viewLine(r) as HitLine).woba, fmt: (r) => f3((viewLine(r) as HitLine).woba) },
       ];
       return c;
     }
     const c: Col[] = [
-      { key: "ip", label: "IP", num: (r) => (r.cur as PitchLine).outs, fmt: (r) => (r.cur as PitchLine).ip },
-      { key: "so", label: "SO", num: (r) => (r.cur as PitchLine).so, fmt: (r) => String((r.cur as PitchLine).so) },
-      { key: "era", label: "ERA", num: (r) => (r.cur as PitchLine).era, fmt: (r) => f2((r.cur as PitchLine).era) },
+      { key: "ip", label: "IP", num: (r) => (viewLine(r) as PitchLine).outs, fmt: (r) => (viewLine(r) as PitchLine).ip },
+      { key: "so", label: "SO", num: (r) => (viewLine(r) as PitchLine).so, fmt: (r) => String((viewLine(r) as PitchLine).so) },
+      { key: "era", label: "ERA", num: (r) => (viewLine(r) as PitchLine).era, fmt: (r) => f2((viewLine(r) as PitchLine).era) },
+      ...(statScope === "form" ? [deltaEra] : []),
       {
         key: "eraPlus",
         label: "ERA+",
         num: (r) => {
           const lg = leagueFor(r.sid, r.leagueId);
-          const era = (r.cur as PitchLine).era;
+          const era = (viewLine(r) as PitchLine).era;
           if (!lg?.lgERA || era == null || era === 0) return null;
           return (100 * lg.lgERA) / era;
         },
         fmt: (r) => {
           const lg = leagueFor(r.sid, r.leagueId);
-          const era = (r.cur as PitchLine).era;
+          const era = (viewLine(r) as PitchLine).era;
           if (!lg?.lgERA || era == null || era === 0) return DASH;
           return String(Math.round((100 * lg.lgERA) / era));
         },
@@ -355,27 +408,19 @@ export default function BaseballTable() {
         num: (r) => {
           const lg = leagueFor(r.sid, r.leagueId);
           if (!lg?.fipConst) return null;
-          return fipFrom(r.winGames, lg.fipConst);
+          return fipFrom(r.viewGames, lg.fipConst);
         },
         fmt: (r) => {
           const lg = leagueFor(r.sid, r.leagueId);
           if (!lg?.fipConst) return DASH;
-          return f2(fipFrom(r.winGames, lg.fipConst));
+          return f2(fipFrom(r.viewGames, lg.fipConst));
         },
       },
-      { key: "whip", label: "WHIP", num: (r) => (r.cur as PitchLine).whip, fmt: (r) => f2((r.cur as PitchLine).whip) },
-      { key: "k9", label: "K/9", num: (r) => (r.cur as PitchLine).k9, fmt: (r) => f1((r.cur as PitchLine).k9) },
-      {
-        key: "delta",
-        label: "ΔERA",
-        num: (r) => r.delta,
-        fmt: (r) => (r.delta == null ? DASH : (r.delta > 0 ? "+" : "") + r.delta.toFixed(2)),
-        title: (r) => (r.prevVal != null ? `prev ${winVal}${mode === "games" ? "G" : "BF"}: ${f2(r.prevVal)} ERA` : ""),
-        deltaGoodDir: -1,
-      },
+      { key: "whip", label: "WHIP", num: (r) => (viewLine(r) as PitchLine).whip, fmt: (r) => f2((viewLine(r) as PitchLine).whip) },
+      { key: "k9", label: "K/9", num: (r) => (viewLine(r) as PitchLine).k9, fmt: (r) => f1((viewLine(r) as PitchLine).k9) },
     ];
     return c;
-  }, [group, ctx.data, winVal, mode]);
+  }, [group, ctx.data, winVal, mode, statScope]);
 
   const sorted = useMemo(() => {
     const active = cols.find((c) => c.key === sortKey);
@@ -401,30 +446,29 @@ export default function BaseballTable() {
   }
 
   function rowTip(r: Row): string {
-    const winLabel = `${mode === "games" ? `last ${winVal} G` : `min ${winVal} ${group === "hitters" ? "PA" : "BF"}`}`;
+    const scopeLabel =
+      statScope === "season"
+        ? "season"
+        : `${mode === "games" ? `last ${winVal} G` : `min ${winVal} ${group === "hitters" ? "PA" : "BF"}`}`;
+    const wXbh = r.viewGames.reduce((a, gm) => a + gm[4] + gm[5] + gm[6], 0);
     if (group === "hitters") {
-      const c = r.cur as HitLine;
-      const s = r.seasonLine as HitLine;
-      const wXbh = r.winGames.reduce((a, gm) => a + gm[4] + gm[5] + gm[6], 0);
-      return [
-        `${f3(c.avg)}/${f3(c.obp)}/${f3(c.slg)} · ${wXbh} XBH · ${c.sb} SB · ${c.rbi} RBI in ${c.g} G (${winLabel})`,
-        `year: ${f3(s.avg)}/${f3(s.obp)}/${f3(s.slg)} · ${s.rbi} RBI · ${s.sb} SB · ${s.hr} HR in ${s.g} G`,
-      ].join("\n");
+      const c = (statScope === "season" ? r.seasonLine : r.cur) as HitLine;
+      return `${f3(c.avg)}/${f3(c.obp)}/${f3(c.slg)} · ${wXbh} XBH · ${c.sb} SB · ${c.rbi} RBI in ${c.g} G (${scopeLabel})`;
     }
-    const c = r.cur as PitchLine;
-    const s = r.seasonLine as PitchLine;
-    return [
-      `${c.ip} IP · ${c.so} K · ${c.bb} BB · ${c.er} ER in ${c.g} G (${winLabel})`,
-      `year: ${s.ip} IP · ${s.so} K · ${s.bb} BB · ${s.er} ER · ${f2(s.era)} ERA in ${s.g} G`,
-    ].join("\n");
+    const c = (statScope === "season" ? r.seasonLine : r.cur) as PitchLine;
+    return `${c.ip} IP · ${c.so} K · ${c.bb} BB · ${c.er} ER in ${c.g} G (${scopeLabel})`;
   }
 
-  const [queryText, setQueryText] = useState("");
+  const [playerInput, setPlayerInput] = useState("");
+  const [selected, setSelected] = useState<OrgEntry | null>(null);
+  const [showSug, setShowSug] = useState(false);
+  const [hiIdx, setHiIdx] = useState(0);
+  const [abVal, setAbVal] = useState("");
+  const [hand, setHand] = useState<"" | "vl" | "vr">("");
   const [orgIdx, setOrgIdx] = useState<OrgEntry[] | null>(null);
-  const [idxLoading, setIdxLoading] = useState(false);
+  const idxPromise = useRef<Promise<OrgEntry[]> | null>(null);
   const [qBusy, setQBusy] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<OrgEntry[] | null>(null);
 
   type ResultRow = {
     key: string;
@@ -443,119 +487,104 @@ export default function BaseballTable() {
 
   async function ensureIndex(): Promise<OrgEntry[]> {
     if (orgIdx) return orgIdx;
-    if (idxLoading) return [];
-    setIdxLoading(true);
+    if (!idxPromise.current) {
+      idxPromise.current = fetch("/api/mlb/org-index")
+        .then(async (r) => {
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.message || j.error || `HTTP ${r.status}`);
+          const players: OrgEntry[] = j.players ?? [];
+          setOrgIdx(players);
+          return players;
+        })
+        .finally(() => {
+          idxPromise.current = null;
+        });
+    }
     try {
-      const r = await fetch("/api/mlb/org-index");
-      const j = await r.json();
-      const players: OrgEntry[] = j.players ?? [];
-      setOrgIdx(players);
-      return players;
+      return await idxPromise.current;
     } catch (e: any) {
       setQError(String(e?.message || e));
       return [];
-    } finally {
-      setIdxLoading(false);
     }
   }
 
-  function parseQuery(raw: string) {
-    let s = ` ${raw.toLowerCase().trim()} `;
-    const q = { namePart: "", nGames: null as number | null, sit: null as "vl" | "vr" | null, opponentId: null as number | null, opponentLabel: null as string | null };
-    const win = s.match(/last\s+(\d+)\s*(?:games?|g)\b/);
-    if (win) {
-      q.nGames = parseInt(win[1], 10);
-      s = s.replace(win[0], " ");
+  const suggestions = useMemo(() => {
+    if (!orgIdx) return [];
+    const q = playerInput.trim().toLowerCase();
+    if (!q) return [];
+    const starts: OrgEntry[] = [];
+    const incl: OrgEntry[] = [];
+    for (const p of orgIdx) {
+      const n = p.name.toLowerCase();
+      if (n.startsWith(q)) starts.push(p);
+      else if (n.includes(q)) incl.push(p);
     }
-    const hand = s.match(/(?:vs\.?|against|v\.?)\s+(lhp|rhp|left(?:y|ies)?|right(?:y|ies)?)\b/);
-    if (hand) {
-      q.sit = hand[1].startsWith("l") ? "vl" : "vr";
-      s = s.replace(hand[0], " ");
-    }
-    const opp = s.match(/(?:vs\.?|against|v\.?)\s+([a-z'.\s]+?)\s*$/);
-    if (opp && !q.sit) {
-      const tok = opp[1].trim();
-      const full = MLB_TEAM_ALIASES[tok] ?? Object.keys(MLB_TEAM_IDS).find((k) => k === tok) ?? Object.keys(MLB_TEAM_IDS).find((k) => tok.length >= 4 && k.includes(tok));
-      if (full) {
-        q.opponentId = MLB_TEAM_IDS[full];
-        q.opponentLabel = full.replace(/\b\w/g, (c) => c.toUpperCase());
-        s = s.replace(opp[0], " ");
-      }
-    }
-    q.namePart = s.replace(/[^a-z'\-\s]/g, " ").replace(/\s+/g, " ").trim();
-    return q;
-  }
+    return [...starts, ...incl].slice(0, 8);
+  }, [orgIdx, playerInput]);
 
-  async function runQuery(preset?: OrgEntry) {
+  useEffect(() => {
+    if (!showSug || suggestions.length === 0) setHiIdx(0);
+  }, [showSug, suggestions.length]);
+
+  function choosePlayer(p: OrgEntry) {
+    setSelected(p);
+    setPlayerInput(p.name);
+    setShowSug(false);
     setQError(null);
-    const idx = await ensureIndex();
-    if (!idx.length && !preset) {
-      setQError("player index unavailable");
-      return;
-    }
-    if (!queryText.trim() && !preset) return;
+  }
 
-    let player: OrgEntry | undefined = preset ?? undefined;
-    let pq = preset
-      ? { namePart: "", nGames: null as number | null, sit: null as "vl" | "vr" | null, opponentId: null as number | null, opponentLabel: null as string | null }
-      : parseQuery(queryText);
-
-    if (!player) {
-      const matches = pq.namePart ? idx.filter((p) => p.name.toLowerCase().includes(pq.namePart)) : [];
-      if (matches.length === 0) {
-        setQError(`no org player matching "${pq.namePart}"`);
+  async function runQuery() {
+    if (!selected || qBusy) return;
+    setQError(null);
+    const rawAb = abVal.trim();
+    let abN: number | null = null;
+    if (rawAb !== "") {
+      abN = Number(rawAb);
+      if (!Number.isFinite(abN) || abN < 1) {
+        setQError("enter a valid at-bat count");
         return;
       }
-      const exact = matches.find((m) => m.name.toLowerCase() === pq.namePart);
-      if (!exact && matches.length > 1) {
-        setCandidates(matches.slice(0, 6));
-        return;
-      }
-      setCandidates(null);
-      player = exact ?? matches[0];
+      abN = Math.floor(abN);
     }
-
     setQBusy(true);
     try {
-      const group = player.kind === "pitcher" ? "pitching" : "hitting";
-      const lr = await fetch(`/api/mlb/player-log?playerId=${player.id}&group=${group}&sportId=${player.sportId}`).then((r) => r.json());
+      const grp = selected.kind === "pitcher" ? "pitching" : "hitting";
+      const lr = await fetch(`/api/mlb/player-log?playerId=${selected.id}&group=${grp}&sportId=${selected.sportId}`).then((r) => r.json());
       let games: number[][] = lr.games ?? [];
       const labels: string[] = [];
+      let note: string | null = null;
 
-      if (pq.sit) {
-        const sr = await fetch(`/api/mlb/player-splits?playerId=${player.id}&group=${group}&sitCode=${pq.sit}&sportId=${player.sportId}`).then((r) => r.json());
+      if (hand) {
+        const sr = await fetch(`/api/mlb/player-splits?playerId=${selected.id}&group=${grp}&sitCode=${hand}&sportId=${selected.sportId}`).then((r) => r.json());
         const agg = sr.games?.[0];
         if (!agg) {
           setQError("no handedness split data for that player");
           return;
         }
         games = [agg];
-        labels.push(`season ${pq.sit === "vl" ? "vs LHP" : "vs RHP"}`);
+        labels.push(`season ${splitLabel(hand, selected.kind)}`);
+        if (abN != null) note = "handedness splits are season aggregates — AB window ignored";
       } else {
-        if (pq.nGames) {
-          games = windowByGames(games, pq.nGames);
-          labels.push(`last ${pq.nGames} G`);
-        }
-        if (pq.opponentId) {
-          games = games.filter((g) => g[group === "pitching" ? 9 : 14] === pq.opponentId);
-          labels.push(`vs ${pq.opponentLabel}`);
+        if (abN != null) {
+          games = windowByAB(games, abN);
+          labels.push(`last ${abN} AB`);
         }
         if (labels.length === 0) labels.push(`${lr.season} season`);
       }
 
-      const line = group === "pitching" ? pitchLine(games) : hitLine(games);
-      const note = pq.sit && (pq.nGames || pq.opponentId) ? "handedness splits are season aggregates — other filters ignored" : null;
+      const line = grp === "pitching" ? pitchLine(games) : hitLine(games);
+      const player = selected;
 
       setResults((prev) =>
         [
           {
-            key: `${player!.id}-${labels.join("-")}-${Date.now()}`,
-            name: player!.name,
-            pos: player!.pos,
-            teamShort: player!.teamShort,
-            sid: player!.sportId,
-            leagueId: player!.leagueId,
-            kind: player!.kind,
+            key: `${player.id}-${labels.join("-")}-${Date.now()}`,
+            name: player.name,
+            pos: player.pos,
+            teamShort: player.teamShort,
+            sid: player.sportId,
+            leagueId: player.leagueId,
+            kind: player.kind,
             label: labels.join(" · "),
             note,
             line,
@@ -576,8 +605,6 @@ export default function BaseballTable() {
     (activeState
       ? "text-neutral-100 border-neutral-600 bg-neutral-800"
       : "text-neutral-400 border-neutral-800 hover:text-neutral-200");
-
-  const cellCls = "px-2 py-1.5 text-right whitespace-nowrap tabular-nums";
 
   const loading = team.loading || watch.loading;
   const error = team.error || watch.error;
@@ -702,23 +729,95 @@ export default function BaseballTable() {
       </div>
 
       <div className="rounded border border-neutral-800 p-3 space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[240px]">
+            <input
+              value={playerInput}
+              onChange={(e) => {
+                setPlayerInput(e.target.value);
+                setSelected(null);
+                setShowSug(true);
+                setHiIdx(0);
+              }}
+              onFocus={() => {
+                ensureIndex();
+                if (playerInput.trim()) setShowSug(true);
+              }}
+              onBlur={() => setShowSug(false)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  if (!showSug) setShowSug(true);
+                  else setHiIdx((i) => Math.min(i + 1, suggestions.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setHiIdx((i) => Math.max(i - 1, 0));
+                } else if (e.key === "Escape") {
+                  setShowSug(false);
+                } else if (e.key === "Enter") {
+                  if (showSug && suggestions[hiIdx]) choosePlayer(suggestions[hiIdx]);
+                  else if (selected) runQuery();
+                }
+              }}
+              placeholder="search player name…"
+              className="w-full bg-transparent outline-none border-b border-subtle px-0 py-1 fg-secondary focus:text-neutral-200 text-sm"
+            />
+            {showSug && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-20 rounded border border-neutral-800 bg-neutral-900 shadow-xl overflow-y-auto max-h-72">
+                {!orgIdx && <div className="px-3 py-2 text-xs text-neutral-500">loading player index…</div>}
+                {orgIdx && playerInput.trim() !== "" && suggestions.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-neutral-500">no matching players</div>
+                )}
+                {suggestions.map((p, i) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => choosePlayer(p)}
+                    onMouseEnter={() => setHiIdx(i)}
+                    className={
+                      "w-full flex items-center justify-between gap-3 px-3 py-1.5 text-left text-sm " +
+                      (i === hiIdx ? "bg-neutral-800 text-neutral-100" : "text-neutral-300")
+                    }
+                  >
+                    <span>{p.name}</span>
+                    <span className="text-[10px] text-neutral-500 whitespace-nowrap">
+                      {p.pos} · {p.teamShort}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <span className="w-px h-5 bg-neutral-800" />
           <input
-            value={queryText}
-            onChange={(e) => setQueryText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") runQuery();
-            }}
-            onFocus={() => ensureIndex()}
-            placeholder='try "spencer jones last 43 games" · "judge vs orioles" · "kilby vs lhp"'
-            className="flex-1 min-w-[240px] bg-transparent outline-none border-b border-subtle px-0 py-1 fg-secondary focus:text-neutral-200 text-sm"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={abVal}
+            onChange={(e) => setAbVal(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="45 AB's"
+            disabled={!!hand}
+            title={hand ? "handedness splits are season aggregates — AB window not applied" : "window: last N at-bats (blank = full season)"}
+            className="w-20 bg-transparent outline-none border-b border-subtle px-1 py-1 fg-secondary focus:text-neutral-200 text-sm text-center placeholder:italic disabled:opacity-40"
           />
+          <select
+            value={hand}
+            onChange={(e) => setHand(e.target.value as "" | "vl" | "vr")}
+            className="bg-neutral-900 border border-neutral-800 rounded text-sm px-2 py-1 text-neutral-300"
+          >
+            <option value="">full season</option>
+            <option value="vl">{selected ? splitLabel("vl", selected.kind) : "vs LHP / LHB"}</option>
+            <option value="vr">{selected ? splitLabel("vr", selected.kind) : "vs RHP / RHB"}</option>
+          </select>
           <button
             onClick={() => runQuery()}
-            disabled={qBusy}
-            className="text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-200 disabled:opacity-50"
+            disabled={qBusy || !selected}
+            aria-label="run query"
+            title={selected ? "run query" : "pick a player from the search suggestions first"}
+            className="text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-200 disabled:opacity-50 disabled:hover:border-neutral-700"
           >
-            {qBusy ? "…" : "Ask"}
+            {qBusy ? <span className="italic">…</span> : <span className="text-base leading-none">→</span>}
           </button>
           {results.length > 0 && (
             <button onClick={() => setResults([])} className="text-xs text-neutral-600 hover:text-neutral-400">
@@ -726,24 +825,6 @@ export default function BaseballTable() {
             </button>
           )}
         </div>
-
-        {candidates && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-neutral-500">multiple matches:</span>
-            {candidates.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setCandidates(null);
-                  runQuery(c);
-                }}
-                className={chip(false)}
-              >
-                {c.name} · {c.teamShort}
-              </button>
-            ))}
-          </div>
-        )}
 
         {qError && <div className="text-xs text-red-400">{qError}</div>}
 
@@ -791,9 +872,36 @@ export default function BaseballTable() {
             </button>
           ))}
         </span>
+
+        <span className="w-px h-5 bg-neutral-800" />
+
+        <button
+          onClick={() => {
+            const next = statScope === "season" ? "form" : "season";
+            setStatScope(next);
+            if (next === "season" && sortKey === "delta") {
+              setSortKey(group === "hitters" ? "ops" : "era");
+            }
+          }}
+          title="toggle full-season stats"
+          className={
+            "text-xs px-3 py-1 rounded border transition-colors " +
+            (statScope === "season"
+              ? "text-amber-300 border-amber-500/60 bg-neutral-800"
+              : "text-neutral-400 border-neutral-800 hover:text-neutral-200")
+          }
+        >
+          {statScope === "season" && <span className="text-amber-400 mr-1">●</span>}
+          season
+        </button>
       </div>
 
-      {loading && <div className="text-sm text-neutral-500">Loading stats…</div>}
+      {loading && (
+        <TableSkeleton
+          labels={cols.map((c) => c.label)}
+          nameLabel={tab === "farm" ? "Prospect" : "Player"}
+        />
+      )}
       {!loading && error && <div className="text-sm text-red-400">{error}</div>}
       {!loading && !error && sorted.length === 0 && (
         <div className="text-sm text-neutral-500">No players found.</div>
@@ -804,7 +912,7 @@ export default function BaseballTable() {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-neutral-500">
-                <th className="text-left font-normal px-2 py-2 sticky left-0 bg-neutral-900 min-w-[140px]">
+                <th className="text-left font-normal px-1.5 py-2 sticky left-0 bg-neutral-900 min-w-[140px]">
                   {tab === "farm" ? "Prospect" : "Player"}
                 </th>
                 {cols.map((c) => (
@@ -812,7 +920,7 @@ export default function BaseballTable() {
                     key={c.key}
                     onClick={() => toggleSort(c.key)}
                     className={
-                      "font-normal px-2 py-2 text-right cursor-pointer select-none hover:text-neutral-300 whitespace-nowrap " +
+                      "font-normal px-1.5 py-2 text-right cursor-pointer select-none hover:text-neutral-300 whitespace-nowrap " +
                       (sortKey === c.key ? "text-neutral-200" : "")
                     }
                   >
@@ -820,7 +928,7 @@ export default function BaseballTable() {
                     {sortKey === c.key ? (sortDir === -1 ? " ↓" : " ↑") : ""}
                   </th>
                 ))}
-                <th className="font-normal px-2 py-2 text-right">Form</th>
+                <th className="font-normal px-1.5 py-2 text-right">Form</th>
               </tr>
             </thead>
             <tbody>
@@ -833,7 +941,7 @@ export default function BaseballTable() {
                   >
                     <td
                       className={
-                        "px-2 py-1.5 whitespace-nowrap sticky left-0 bg-neutral-900 " +
+                        "px-1.5 py-1.5 whitespace-nowrap sticky left-0 bg-neutral-900 " +
                         (r.stale ? "text-neutral-600" : "text-neutral-200")
                       }
                       title={tip}
@@ -860,7 +968,7 @@ export default function BaseballTable() {
                         </td>
                       );
                     })}
-                    <td className="px-2 py-1.5 text-right text-neutral-400">
+                    <td className="px-1.5 py-1.5 text-right text-neutral-400">
                       <Spark values={r.spark} />
                     </td>
                   </tr>

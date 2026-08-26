@@ -96,6 +96,11 @@ function walkBack(games: number[][], keyIdx: number, min: number): [number, numb
   return [i + 1, games.length];
 }
 
+export function windowByAB(games: HitGame[], minAB: number): HitGame[] {
+  const [start] = walkBack(games, HC.AB, minAB);
+  return games.slice(start);
+}
+
 export function windowByPA(games: HitGame[], minPA: number): HitGame[] {
   const [start] = walkBack(games, HC.PA, minPA);
   return games.slice(start);
