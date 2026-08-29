@@ -11,13 +11,14 @@ import Footer from "../components/Footer.astro";
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Kaevu</title>
-    <!-- Google Fonts: DM Mono (mono), DM Serif Display (titles) -->
+    <!-- Google Fonts: DM Mono (mono), DM Serif Display (titles), Manrope (display) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Serif+Display:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Serif+Display:ital,wght@0,400;1,400&family=Manrope:wght@200..800&display=swap" rel="stylesheet">
   </head>
   <body class="bg-neutral-900 text-neutral-100 font-mono">
-    <div class="max-w-3xl mx-auto px-6 py-16 min-h-screen">
+    <div class="bg-texture" aria-hidden="true"><img src="/img/ocean1-banner.png" alt="" loading="lazy" /></div>
+    <div class="max-w-3xl mx-auto px-6 py-12 min-h-screen">
       <Header />
       <main>
         <slot />

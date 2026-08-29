@@ -9,22 +9,23 @@ type ShareItem = {
 
 type Props = {
   items: ShareItem[];
-  tags: Record<string, string>;
+  tags: Record<string, string[]>;
 };
 
 type Category = "cs" | "ml" | "finance" | "math" | "other" | "untagged";
 
 function cleanTitle(raw: string): string {
   let s = raw;
-  s = s.replace(/[\._]/g, " ");
+  s = s.replace(/\.(pdf|djvu|epub|mobi|azw3|zip|rar|7z)\s*$/i, "");
   s = s.replace(/^[ǂ]+\s*/u, "");
-  s = s.replace(/\.(pdf|djvu|epub|mobi|azw3|zip|rar|7z)$/i, "");
+  s = s.replace(/[\._]/g, " ");
   s = s.replace(/^\[[^\]]+\]\s*/, "");
   s = s.replace(/anna'?s?\s+archive[^-–—:]*[-–—:]?/gi, "");
   s = s.replace(/\b[0-9a-fA-F]{8,}\b/g, "");
   s = s.replace(/\s*--\s*[^-]+(?:\s*--\s*[^-]+)*\s*$/g, "");
-  s = s.replace(/[\s\-]{2,}/g, " ").trim();
-  s = s.replace(/\s*[:–—-]\s*/g, ": ");
+  s = s.replace(/-\s|\s-/g, ": ");
+  s = s.replace(/[–—]\s*/g, ": ");
+  s = s.replace(/\s*:\s*/g, ": ");
   s = s.replace(/\s{2,}/g, " ").trim();
   return s;
 }
@@ -38,10 +39,32 @@ function formatSize(bytes: number): string {
 
 const validTags = new Set(["cs", "ml", "finance", "math", "other"]);
 
-function lookupTag(title: string, tags: Record<string, string>): Category {
-  const tag = tags[title.toLowerCase()];
-  if (tag && validTags.has(tag)) return tag as Category;
-  return "untagged";
+function normKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[,;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lookupTags(title: string, tags: Record<string, string[]>): Category[] {
+  const normTitle = normKey(title);
+  const keys = Object.keys(tags).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    const k = normKey(key);
+    const match =
+      normTitle === k ||
+      normTitle.startsWith(k + " ") ||
+      normTitle.includes(" " + k + " ");
+    if (!match) continue;
+    const cats: Category[] = [];
+    for (const t of tags[key]) {
+      const c = t as Category;
+      if (validTags.has(t) && !cats.includes(c)) cats.push(c);
+    }
+    if (cats.length) return cats;
+  }
+  return [];
 }
 
 const categoryLabel: Record<Category, string> = {
@@ -72,7 +95,7 @@ export default function Bookshelf({ items, tags }: Props) {
     return items
       .map((it) => {
         const title = cleanTitle(it.name);
-        const cat = lookupTag(title, tags);
+        const cats = lookupTags(title, tags);
         const hrefBrowse =
           "https://ebooks.kaevu.dev/web/client/pubshares/" +
           SHARE_ID +
@@ -82,14 +105,14 @@ export default function Bookshelf({ items, tags }: Props) {
         return {
           raw: it,
           title,
-          cat,
+          cats,
           sizeStr: formatSize(it.size),
           href: hrefBrowse,
         };
       })
       .sort((a, b) => {
-        if (a.cat === "untagged" && b.cat !== "untagged") return -1;
-        if (a.cat !== "untagged" && b.cat === "untagged") return 1;
+        if (a.cats.length === 0 && b.cats.length > 0) return -1;
+        if (a.cats.length > 0 && b.cats.length === 0) return 1;
         return a.title.localeCompare(b.title);
       });
   }, [items, tags]);
@@ -97,7 +120,7 @@ export default function Bookshelf({ items, tags }: Props) {
   const visible = useMemo(() => {
     const term = q.trim().toLowerCase();
     return books.filter((b) => {
-      if (filter !== "all" && b.cat !== filter) return false;
+      if (filter !== "all" && !b.cats.includes(filter)) return false;
       if (!term) return true;
       return (
         b.title.toLowerCase().includes(term) ||
@@ -116,7 +139,7 @@ export default function Bookshelf({ items, tags }: Props) {
     { key: "untagged", label: "untagged" },
   ];
 
-  const untaggedCount = books.filter((b) => b.cat === "untagged").length;
+  const untaggedCount = books.filter((b) => b.cats.length === 0).length;
 
   return (
     <div className="space-y-6">
@@ -181,7 +204,11 @@ export default function Bookshelf({ items, tags }: Props) {
               </div>
 
               <div className="flex items-center gap-2 pl-4">
-                <span className={pillClass[b.cat]}>{categoryLabel[b.cat]}</span>
+                {b.cats.map((c) => (
+                  <span key={c} className={pillClass[c]}>
+                    {categoryLabel[c]}
+                  </span>
+                ))}
                 <span className="text-xs fg-tertiary" style={{ fontFamily: "var(--font-mono)" }}>
                   {b.sizeStr}
                 </span>

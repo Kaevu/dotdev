@@ -10,6 +10,10 @@
     "Liberation Mono", "Courier New", monospace;
   --font-serif: "DM Serif Display", Georgia, Cambria, "Times New Roman", Times,
     serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+
+  --bg-texture-opacity: 0.22;
 
   /* Foreground palette */
   --fg-primary: #e5e5e5;   /* near-neutral-200 */
@@ -37,6 +41,45 @@
 /* Wire Google fonts into Tailwind utility classes without editing config */
 .font-mono { font-family: var(--font-mono) !important; }
 .font-serif { font-family: var(--font-serif) !important; }
+.font-sans { font-family: var(--font-sans) !important; }
+
+/* Anchor absolute-positioned children (bg-texture) to the document */
+body { position: relative; }
+
+/* Dithered ocean anchored to the very end of each page, behind the footer.
+   Rendered as an <img> at natural aspect ratio; black fills the sides and a
+   strong top fade lets the waves emerge from the background. */
+.bg-texture {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -10;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  line-height: 0;
+  /* can never grow the page; excess clips off the top where the mask is invisible anyway */
+  max-height: 62vh;
+  overflow: clip;
+}
+
+.bg-texture img {
+  width: min(66vw, 1200px);
+  height: auto;
+  opacity: var(--bg-texture-opacity, 0.22);
+  filter: grayscale(0.8) brightness(1.05);
+  /* waves emerge only in the bottom third of the image */
+  -webkit-mask-image:
+    linear-gradient(to top, black 0%, rgba(0,0,0,0.9) 19%, rgba(0,0,0,0.48) 38%, rgba(0,0,0,0.14) 53%, transparent 67%),
+    linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to top, black 0%, rgba(0,0,0,0.9) 19%, rgba(0,0,0,0.48) 38%, rgba(0,0,0,0.14) 53%, transparent 67%),
+    linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  mask-composite: intersect;
+}
 
 /* Utility tokens for bookshelf page */
 .fg-primary { color: var(--fg-primary); }

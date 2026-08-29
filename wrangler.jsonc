@@ -1,0 +1,13 @@
+{
+  "name": "kaevudev",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": "dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bookmarks-db",
+      "database_id": "760adfda-b899-4ae4-9dee-8c9793e5ac7c"
+    }
+  ]
+}

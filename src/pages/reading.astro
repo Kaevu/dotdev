@@ -26,7 +26,9 @@ try {
   console.error("Reading: fetch error", e);
 }
 
-function loadTagMap(): Record<string, string> {
+const VALID_TAGS = new Set(["cs", "ml", "finance", "math", "other"]);
+
+function loadTagMap(): Record<string, string[]> {
   const filePath = join(process.cwd(), "src", "data", "books", "tags.md");
   let text: string;
   try {
@@ -34,15 +36,27 @@ function loadTagMap(): Record<string, string> {
   } catch {
     return {};
   }
-  const map: Record<string, string> = {};
+  const map: Record<string, string[]> = {};
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (!line || line.startsWith("#") || line.startsWith("---")) continue;
+    if (
+      !line ||
+      line.startsWith("#") ||
+      line.startsWith("---") ||
+      line.startsWith("```")
+    ) {
+      continue;
+    }
     const sep = line.indexOf("|");
     if (sep === -1) continue;
     const key = line.slice(0, sep).trim().toLowerCase();
-    const val = line.slice(sep + 1).trim();
-    if (key && val) map[key] = val;
+    if (!key || key === "clean book title") continue;
+    const tags = line
+      .slice(sep + 1)
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => VALID_TAGS.has(t));
+    if (tags.length) map[key] = tags;
   }
   return map;
 }

@@ -1,7 +1,16 @@
 ---
-import BaseLayout from "../layouts/BaseLayout.astro"
+export const prerender = false;
+
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Bookmarks from "../components/Bookmarks.tsx";
+import { fetchBookmarks } from "../lib/bookmarks/store";
+
+const items = await fetchBookmarks(Astro.locals);
 ---
 
 <BaseLayout>
-
+  <section aria-labelledby="bookmarks-heading" class="">
+    <h1 id="bookmarks-heading" class="sr-only">Bookmarks</h1>
+    <Bookmarks client:load items={items} />
+  </section>
 </BaseLayout>
