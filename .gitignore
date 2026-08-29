@@ -18,7 +18,8 @@ pnpm-debug.log*
 .env.production
 .dev.vars
 
-# wrangler local dev state
+# wrangler local dev config + state (prod config lives in the dashboard)
+wrangler.jsonc
 .wrangler/
 
 # macOS-specific files
