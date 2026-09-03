@@ -4,6 +4,7 @@ import type { APIRoute } from "astro";
 import { getEnv, tokenOk, jsonError } from "../../../lib/bookmarks/util";
 import {
   KINDS,
+  MAX_TAGS_PER_BOOKMARK,
   tagMenuForPrompt,
   sanitizeTags,
   isKind,
@@ -164,6 +165,51 @@ function extractiveSummary(ex: Extracted): string {
 
 /* ------------------------------ llm call ---------------------------------- */
 
+const DEFAULT_MODEL = "z-ai/glm-5.2:free";
+
+/**
+ * Models the deployed key is allowed to use (OpenRouter guardrails).
+ * The configured primary is tried first, then the rest in order.
+ */
+const MODEL_CHAIN = [
+  "z-ai/glm-5.2:free",
+  "google/gemma-4-31b-it:free",
+  "minimax/minimax-m3:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+];
+
+/** Strict JSON schema for the summary payload (structured outputs). */
+const SUMMARY_SCHEMA = {
+  name: "bookmark_summary",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      summary: { type: "string" },
+      kind: { type: "string", enum: [...KINDS] },
+      tags: {
+        type: "array",
+        items: { type: "string" },
+        minItems: 1,
+        maxItems: MAX_TAGS_PER_BOOKMARK,
+      },
+    },
+    required: ["title", "summary", "kind", "tags"],
+    additionalProperties: false,
+  },
+};
+
+type LlmResult = {
+  title: string;
+  summary: string;
+  kind: Kind;
+  tags: string[];
+};
+
+type Attempt = { model: string; ok: boolean; error?: string };
+
+/** Backup parser for models that ignore response_format. */
 function extractJson(s: string): Record<string, unknown> | null {
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : s;
@@ -177,12 +223,12 @@ function extractJson(s: string): Record<string, unknown> | null {
   }
 }
 
-async function llmSummarize(
+async function attemptModel(
   apiKey: string,
   model: string,
   url: URL,
   ex: Extracted
-): Promise<{ title: string; summary: string; kind: Kind; tags: string[] } | null> {
+): Promise<{ parsed: Record<string, unknown> | null; error?: string }> {
   const system = [
     "You summarize web pages for a personal bookmarks list. Reply with ONLY a JSON object, no markdown fences, with keys:",
     '"title": best human-readable title of the page,',
@@ -221,34 +267,105 @@ async function llmSummarize(
         model,
         temperature: 0.2,
         max_tokens: 600,
+        response_format: { type: "json_schema", json_schema: SUMMARY_SCHEMA },
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
         ],
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      let snippet = "";
+      try {
+        snippet = (await res.text()).slice(0, 200);
+      } catch {
+        /* ignore */
+      }
+      console.warn(`[summarize] ${model} -> HTTP ${res.status} ${snippet}`);
+      return { parsed: null, error: `http_${res.status}` };
+    }
     const data: any = await res.json();
     const content: string | undefined = data?.choices?.[0]?.message?.content;
-    if (!content) return null;
+    if (!content) {
+      console.warn(`[summarize] ${model} -> empty content`);
+      return { parsed: null, error: "empty_content" };
+    }
     const parsed = extractJson(content);
-    if (!parsed) return null;
-    const kind = isKind(parsed.kind) ? parsed.kind : null;
-    const tags = sanitizeTags(parsed.tags);
-    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
-    const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
-    if (!kind || !tags || !summary) return null;
-    return {
-      title: title.slice(0, 300) || ex.title,
-      summary: summary.slice(0, 1200),
-      kind,
-      tags,
-    };
-  } catch {
-    return null;
+    if (!parsed) {
+      console.warn(
+        `[summarize] ${model} -> unparseable JSON: ${content.slice(0, 200)}`
+      );
+      return { parsed: null, error: "bad_json" };
+    }
+    return { parsed };
+  } catch (e) {
+    const reason =
+      e instanceof Error && e.name === "AbortError" ? "timeout" : "network_error";
+    console.warn(`[summarize] ${model} -> ${reason}`);
+    return { parsed: null, error: reason };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Coerce one model response, filling invalid fields from the heuristics
+ * instead of discarding the whole LLM result. Only a missing summary
+ * is fatal (it's the one thing only the LLM can provide).
+ */
+function coerceLlm(
+  parsed: Record<string, unknown>,
+  ex: Extracted,
+  fallbackKind: Kind,
+  fallbackTags: string[]
+): LlmResult | null {
+  const summary =
+    typeof parsed.summary === "string"
+      ? parsed.summary.trim().slice(0, 1200)
+      : "";
+  if (!summary) return null;
+  const rawTitle =
+    typeof parsed.title === "string" && parsed.title.trim()
+      ? parsed.title.trim()
+      : ex.title;
+  return {
+    title: rawTitle.slice(0, 300),
+    summary,
+    kind: isKind(parsed.kind) ? parsed.kind : fallbackKind,
+    tags: sanitizeTags(parsed.tags) ?? fallbackTags,
+  };
+}
+
+async function llmSummarizeChain(
+  apiKey: string,
+  primary: string,
+  url: URL,
+  ex: Extracted,
+  fallbackKind: Kind,
+  fallbackTags: string[]
+): Promise<{
+  result: LlmResult | null;
+  attempts: Attempt[];
+  model: string | null;
+}> {
+  const models = [primary, ...MODEL_CHAIN.filter((m) => m !== primary)];
+  const attempts: Attempt[] = [];
+  for (const model of models) {
+    const { parsed, error } = await attemptModel(apiKey, model, url, ex);
+    if (!parsed) {
+      attempts.push({ model, ok: false, error });
+      continue;
+    }
+    const result = coerceLlm(parsed, ex, fallbackKind, fallbackTags);
+    if (!result) {
+      console.warn(`[summarize] ${model} -> empty summary, trying next model`);
+      attempts.push({ model, ok: false, error: "no_summary" });
+      continue;
+    }
+    attempts.push({ model, ok: true });
+    return { result, attempts, model };
+  }
+  return { result: null, attempts, model: null };
 }
 
 /* ------------------------------ route ------------------------------------- */
@@ -330,14 +447,27 @@ export const POST: APIRoute = async ({ locals, request }) => {
           tags: fallbackTags,
         };
 
-  // Try the LLM; fall back to extractive when unavailable
+  // Try the LLM whenever a key is configured -- even for short pages.
+  // Only the extractive fallback stays gated on word count.
   const apiKey = env.OPENROUTER_API_KEY as string | undefined;
-  const model =
-    (env.OPENROUTER_MODEL as string | undefined) || "google/gemini-2.0-flash-001";
-  const usedFallback = !apiKey || ex.wordCount < 120;
-  const llm = usedFallback
-    ? null
-    : await llmSummarize(apiKey as string, model, url, ex);
+  const primary =
+    (env.OPENROUTER_MODEL as string | undefined) || DEFAULT_MODEL;
+  let llm: LlmResult | null = null;
+  let llmModel: string | null = null;
+  let attempts: Attempt[] = [];
+  if (apiKey) {
+    const chain = await llmSummarizeChain(
+      apiKey,
+      primary,
+      url,
+      ex,
+      fallbackKind,
+      fallbackTags
+    );
+    llm = chain.result;
+    llmModel = chain.model;
+    attempts = chain.attempts;
+  }
 
   const result = llm ?? fallback;
   if (!result) {
@@ -350,6 +480,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   const words = ex.wordCount;
   const readingMinutes = words >= 120 ? Math.max(1, Math.round(words / 200)) : null;
+  const fallbackReason = llm
+    ? null
+    : !apiKey
+      ? "no_api_key"
+      : `llm_failed:${attempts.map((a) => a.error ?? "ok").join("+")}`;
 
   return new Response(
     JSON.stringify({
@@ -360,8 +495,15 @@ export const POST: APIRoute = async ({ locals, request }) => {
       tags: result.tags,
       kind: result.kind,
       reading_minutes: result.kind === "video" ? null : readingMinutes,
+      model: llmModel,
       fallback: !llm,
+      fallback_reason: fallbackReason,
       word_count: words,
+      debug: {
+        hasKey: !!apiKey,
+        primary,
+        attempts,
+      },
     }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );

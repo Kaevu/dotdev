@@ -112,7 +112,12 @@ async function streamToText(stream) {
 
 async function sendViaCloudflare(from, to, raw) {
   const { EmailMessage, sendEmail } = await import("cloudflare:email");
-  await sendEmail(new EmailMessage(from, to, raw));
+  const msg = new EmailMessage(from, to, raw);
+  if (typeof sendEmail === "function") {
+    await sendEmail(msg);
+  } else {
+    await msg.send();
+  }
 }
 
 async function reply(env, to, subject, text) {
@@ -123,7 +128,9 @@ async function reply(env, to, subject, text) {
 
 async function postJson(env, path, body) {
   const base = (env.BOOKMARKS_API_BASE || "").replace(/\/+$/, "");
-  const res = await fetch(base + path, {
+  const target = base + path;
+  console.log(`[bookmark-mail] POST ${target || "(BOOKMARKS_API_BASE not set)"}`);
+  const res = await fetch(target, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -137,6 +144,10 @@ async function postJson(env, path, body) {
   } catch {
     /* non-json response */
   }
+  console.log(
+    `[bookmark-mail] ${path} -> ${res.status}` +
+      (res.ok ? "" : ` body=${JSON.stringify(data).slice(0, 500)}`)
+  );
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -167,7 +178,8 @@ function cardText(result) {
   if (result.fallback) {
     lines.push(
       "",
-      "note: llm summarizer unavailable - extractive summary used; tags are best-effort"
+      "note: llm summarizer unavailable - extractive summary used; tags are best-effort" +
+        (result.fallback_reason ? ` (${result.fallback_reason})` : "")
     );
   }
   lines.push("", result.url);
@@ -178,9 +190,13 @@ export default {
   async email(message, env) {
     const to = message.from;
     const subject = message.headers.get("subject") || "";
+    console.log(
+      `[bookmark-mail] email from=${to} subject=${JSON.stringify(subject)}`
+    );
     try {
       const raw = await streamToText(message.raw);
       const url = extractUrlFromEmail(raw, subject);
+      console.log(`[bookmark-mail] extracted url=${url ?? "(none)"}`);
       if (!url) {
         await reply(
           env,
@@ -225,7 +241,11 @@ export default {
         return;
       }
       await reply(env, to, `saved: ${sum.data.title || url}`, cardText(sum.data));
+      console.log("[bookmark-mail] saved reply sent");
     } catch (e) {
+      console.error(
+        `[bookmark-mail] exception: ${(e && (e.stack || e.message)) || String(e)}`
+      );
       try {
         await reply(
           env,
@@ -233,9 +253,19 @@ export default {
           "bookmark failed: error",
           String((e && e.stack) || e)
         );
-      } catch {
-        /* reply itself failed */
+      } catch (replyErr) {
+        console.error(
+          `[bookmark-mail] reply send failed: ${
+            (replyErr && (replyErr.stack || replyErr.message)) || String(replyErr)
+          }`
+        );
       }
     }
+  },
+  async fetch() {
+    return new Response(
+      JSON.stringify({ ok: true, worker: "bookmark-mail", version: 3 }),
+      { headers: { "content-type": "application/json" } }
+    );
   },
 };
