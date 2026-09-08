@@ -13,7 +13,7 @@ import {
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_HTML_BYTES = 1_000_000;
-const LLM_TIMEOUT_MS = 30_000;
+const LLM_TIMEOUT_MS = 60_000;
 const MAX_TEXT_FOR_LLM = 6_000;
 
 type Extracted = {
@@ -165,18 +165,22 @@ function extractiveSummary(ex: Extracted): string {
 
 /* ------------------------------ llm call ---------------------------------- */
 
-const DEFAULT_MODEL = "z-ai/glm-5.2:free";
+const DEFAULT_MODEL = "openrouter/free";
 
 /**
  * Models the deployed key is allowed to use (OpenRouter guardrails).
- * The configured primary is tried first, then the rest in order.
+ * The auto-router goes first -- it fails over across the free pool
+ * server-side, so single-model delistings can't break us. Pinned
+ * models follow in observed-reliability order.
  */
-const MODEL_CHAIN = [
-  "z-ai/glm-5.2:free",
-  "google/gemma-4-31b-it:free",
-  "minimax/minimax-m3:free",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
+const MODEL_CHAIN: Array<{ id: string; structured: boolean }> = [
+  { id: "openrouter/free", structured: false },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b:free", structured: false },
+  { id: "google/gemma-4-31b-it:free", structured: true },
 ];
+
+/** Model IDs that must not receive response_format (unsupported or varies). */
+const NO_STRUCTURED = new Set(["openrouter/free"]);
 
 /** Strict JSON schema for the summary payload (structured outputs). */
 const SUMMARY_SCHEMA = {
@@ -207,7 +211,44 @@ type LlmResult = {
   tags: string[];
 };
 
-type Attempt = { model: string; ok: boolean; error?: string };
+type Attempt = { model: string; ok: boolean; error?: string; tries?: number };
+
+const MAX_RETRIES_PER_MODEL = 1;
+const RETRY_BASE_MS = 2000;
+const RETRY_MAX_MS = 20000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * How long to wait before retrying a 429/503. Prefers the server's hint:
+ * Retry-After, then X-RateLimit-Reset, then capped exponential backoff
+ * (free-tier 429s often carry no Retry-After).
+ */
+function retryDelayMs(res: Response, retryIndex: number): number {
+  const ra = res.headers.get("retry-after");
+  if (ra) {
+    const secs = Number(ra);
+    if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, RETRY_MAX_MS);
+    const date = Date.parse(ra);
+    if (Number.isFinite(date)) {
+      const d = date - Date.now();
+      if (d > 0) return Math.min(d, RETRY_MAX_MS);
+    }
+  }
+  const reset = res.headers.get("x-ratelimit-reset");
+  if (reset) {
+    let t = Number(reset);
+    if (Number.isFinite(t) && t > 0) {
+      if (t < 1e12) t *= 1000; // seconds -> ms
+      const d = t - Date.now();
+      if (d > 0) return Math.min(d, RETRY_MAX_MS);
+    }
+  }
+  const exp = Math.min(RETRY_BASE_MS * 2 ** retryIndex, RETRY_MAX_MS);
+  return exp + Math.floor(Math.random() * 1000);
+}
 
 /** Backup parser for models that ignore response_format. */
 function extractJson(s: string): Record<string, unknown> | null {
@@ -227,8 +268,14 @@ async function attemptModel(
   apiKey: string,
   model: string,
   url: URL,
-  ex: Extracted
-): Promise<{ parsed: Record<string, unknown> | null; error?: string }> {
+  ex: Extracted,
+  opts: { structured: boolean } = { structured: true }
+): Promise<{
+  parsed: Record<string, unknown> | null;
+  servedModel?: string;
+  error?: string;
+  tries: number;
+}> {
   const system = [
     "You summarize web pages for a personal bookmarks list. Reply with ONLY a JSON object, no markdown fences, with keys:",
     '"title": best human-readable title of the page,',
@@ -251,61 +298,94 @@ async function attemptModel(
     ex.text.slice(0, MAX_TEXT_FOR_LLM),
   ].join("\n");
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        "http-referer": "https://kaevu.dev",
-        "x-title": "kaevu.dev bookmarks",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_tokens: 600,
-        response_format: { type: "json_schema", json_schema: SUMMARY_SCHEMA },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      let snippet = "";
-      try {
-        snippet = (await res.text()).slice(0, 200);
-      } catch {
-        /* ignore */
+  const started = Date.now();
+  const elapsed = () => `${Date.now() - started}ms`;
+  const maxTries = 1 + MAX_RETRIES_PER_MODEL;
+
+  for (let i = 0; i < maxTries; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json",
+          "http-referer": "https://kaevu.dev",
+          "x-title": "kaevu.dev bookmarks",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 600,
+          ...(opts.structured
+            ? { response_format: { type: "json_schema", json_schema: SUMMARY_SCHEMA } }
+            : {}),
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+      });
+      if (res.status === 429 || res.status === 503) {
+        let snippet = "";
+        try {
+          snippet = (await res.text()).slice(0, 200);
+        } catch {
+          /* ignore */
+        }
+        console.warn(
+          `[summarize] ${model} -> HTTP ${res.status} (try ${i + 1}/${maxTries}, ${elapsed()}) ${snippet}`
+        );
+        if (i < maxTries - 1) {
+          const wait = retryDelayMs(res, i);
+          console.warn(`[summarize] ${model} -> retrying in ${wait}ms`);
+          await sleep(wait);
+          continue;
+        }
+        return { parsed: null, error: `http_${res.status}`, tries: i + 1 };
       }
-      console.warn(`[summarize] ${model} -> HTTP ${res.status} ${snippet}`);
-      return { parsed: null, error: `http_${res.status}` };
-    }
-    const data: any = await res.json();
-    const content: string | undefined = data?.choices?.[0]?.message?.content;
-    if (!content) {
-      console.warn(`[summarize] ${model} -> empty content`);
-      return { parsed: null, error: "empty_content" };
-    }
-    const parsed = extractJson(content);
-    if (!parsed) {
+      if (!res.ok) {
+        let snippet = "";
+        try {
+          snippet = (await res.text()).slice(0, 200);
+        } catch {
+          /* ignore */
+        }
+        console.warn(`[summarize] ${model} -> HTTP ${res.status} (${elapsed()}) ${snippet}`);
+        return { parsed: null, error: `http_${res.status}`, tries: i + 1 };
+      }
+      const data: any = await res.json();
+      const content: string | undefined = data?.choices?.[0]?.message?.content;
+      if (!content) {
+        console.warn(`[summarize] ${model} -> empty content (${elapsed()})`);
+        return { parsed: null, error: "empty_content", tries: i + 1 };
+      }
+      const parsed = extractJson(content);
+      if (!parsed) {
+        console.warn(
+          `[summarize] ${model} -> unparseable JSON (${elapsed()}): ${content.slice(0, 200)}`
+        );
+        return { parsed: null, error: "bad_json", tries: i + 1 };
+      }
+      const servedModel =
+        typeof data?.model === "string" ? (data.model as string) : undefined;
       console.warn(
-        `[summarize] ${model} -> unparseable JSON: ${content.slice(0, 200)}`
+        `[summarize] ${model} -> ok (${elapsed()})` +
+          (servedModel && servedModel !== model ? ` served by ${servedModel}` : "")
       );
-      return { parsed: null, error: "bad_json" };
+      return { parsed, servedModel, tries: i + 1 };
+    } catch (e) {
+      const reason =
+        e instanceof Error && e.name === "AbortError" ? "timeout" : "network_error";
+      console.warn(`[summarize] ${model} -> ${reason} (${elapsed()})`);
+      return { parsed: null, error: reason, tries: i + 1 };
+    } finally {
+      clearTimeout(timer);
     }
-    return { parsed };
-  } catch (e) {
-    const reason =
-      e instanceof Error && e.name === "AbortError" ? "timeout" : "network_error";
-    console.warn(`[summarize] ${model} -> ${reason}`);
-    return { parsed: null, error: reason };
-  } finally {
-    clearTimeout(timer);
   }
+  return { parsed: null, error: "unknown", tries: maxTries };
 }
 
 /**
@@ -348,22 +428,31 @@ async function llmSummarizeChain(
   attempts: Attempt[];
   model: string | null;
 }> {
-  const models = [primary, ...MODEL_CHAIN.filter((m) => m !== primary)];
+  const models = [
+    { id: primary, structured: !NO_STRUCTURED.has(primary) },
+    ...MODEL_CHAIN.filter((m) => m.id !== primary),
+  ];
   const attempts: Attempt[] = [];
-  for (const model of models) {
-    const { parsed, error } = await attemptModel(apiKey, model, url, ex);
+  for (const { id, structured } of models) {
+    const { parsed, servedModel, error, tries } = await attemptModel(
+      apiKey,
+      id,
+      url,
+      ex,
+      { structured }
+    );
     if (!parsed) {
-      attempts.push({ model, ok: false, error });
+      attempts.push({ model: id, ok: false, error, tries });
       continue;
     }
     const result = coerceLlm(parsed, ex, fallbackKind, fallbackTags);
     if (!result) {
-      console.warn(`[summarize] ${model} -> empty summary, trying next model`);
-      attempts.push({ model, ok: false, error: "no_summary" });
+      console.warn(`[summarize] ${id} -> empty summary, trying next model`);
+      attempts.push({ model: id, ok: false, error: "no_summary", tries });
       continue;
     }
-    attempts.push({ model, ok: true });
-    return { result, attempts, model };
+    attempts.push({ model: id, ok: true, tries });
+    return { result, attempts, model: servedModel ?? id };
   }
   return { result: null, attempts, model: null };
 }
