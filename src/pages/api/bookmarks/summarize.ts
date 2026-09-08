@@ -176,7 +176,8 @@ const DEFAULT_MODEL = "openrouter/free";
 const MODEL_CHAIN: Array<{ id: string; structured: boolean }> = [
   { id: "openrouter/free", structured: false },
   { id: "nvidia/nemotron-3-ultra-550b-a55b:free", structured: false },
-  { id: "google/gemma-4-31b-it:free", structured: true },
+  { id: "liquid/lfm-2.5-2.6b:free", structured: true },
+  { id: "mistralai/mistral-nemo", structured: true },
 ];
 
 /** Model IDs that must not receive response_format (unsupported or varies). */
@@ -215,26 +216,34 @@ type Attempt = { model: string; ok: boolean; error?: string; tries?: number };
 
 const MAX_RETRIES_PER_MODEL = 1;
 const RETRY_BASE_MS = 2000;
-const RETRY_MAX_MS = 20000;
+const RETRY_MAX_MS = 60000;
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+
+/** Overridable for local testing against a stub server. */
+function openRouterBase(env: Record<string, unknown>): string {
+  const base = env.OPENROUTER_BASE_URL as string | undefined;
+  return (base ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 /**
- * How long to wait before retrying a 429/503. Prefers the server's hint:
- * Retry-After, then X-RateLimit-Reset, then capped exponential backoff
- * (free-tier 429s often carry no Retry-After).
+ * How long to wait before retrying a rate/capacity error. Prefers the
+ * server's hint: Retry-After (honored up to 120s), then X-RateLimit-Reset,
+ * then capped exponential backoff (free-tier 429s often carry no Retry-After).
  */
 function retryDelayMs(res: Response, retryIndex: number): number {
+  const HINT_CAP_MS = 120_000;
   const ra = res.headers.get("retry-after");
   if (ra) {
     const secs = Number(ra);
-    if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, RETRY_MAX_MS);
+    if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, HINT_CAP_MS);
     const date = Date.parse(ra);
     if (Number.isFinite(date)) {
       const d = date - Date.now();
-      if (d > 0) return Math.min(d, RETRY_MAX_MS);
+      if (d > 0) return Math.min(d, HINT_CAP_MS);
     }
   }
   const reset = res.headers.get("x-ratelimit-reset");
@@ -243,7 +252,7 @@ function retryDelayMs(res: Response, retryIndex: number): number {
     if (Number.isFinite(t) && t > 0) {
       if (t < 1e12) t *= 1000; // seconds -> ms
       const d = t - Date.now();
-      if (d > 0) return Math.min(d, RETRY_MAX_MS);
+      if (d > 0) return Math.min(d, HINT_CAP_MS);
     }
   }
   const exp = Math.min(RETRY_BASE_MS * 2 ** retryIndex, RETRY_MAX_MS);
@@ -266,6 +275,7 @@ function extractJson(s: string): Record<string, unknown> | null {
 
 async function attemptModel(
   apiKey: string,
+  baseUrl: string,
   model: string,
   url: URL,
   ex: Extracted,
@@ -306,7 +316,7 @@ async function attemptModel(
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         signal: ctrl.signal,
         headers: {
@@ -328,7 +338,7 @@ async function attemptModel(
           ],
         }),
       });
-      if (res.status === 429 || res.status === 503) {
+      if (RETRYABLE_STATUS.has(res.status)) {
         let snippet = "";
         try {
           snippet = (await res.text()).slice(0, 200);
@@ -418,6 +428,7 @@ function coerceLlm(
 
 async function llmSummarizeChain(
   apiKey: string,
+  baseUrl: string,
   primary: string,
   url: URL,
   ex: Extracted,
@@ -436,6 +447,7 @@ async function llmSummarizeChain(
   for (const { id, structured } of models) {
     const { parsed, servedModel, error, tries } = await attemptModel(
       apiKey,
+      baseUrl,
       id,
       url,
       ex,
@@ -547,6 +559,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
   if (apiKey) {
     const chain = await llmSummarizeChain(
       apiKey,
+      openRouterBase(env),
       primary,
       url,
       ex,
