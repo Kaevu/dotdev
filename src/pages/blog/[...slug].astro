@@ -4,7 +4,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 // 1. Generate static paths
 export async function getStaticPaths() {
-  const posts = await getCollection('blog');
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
   return posts.map((post) => ({
     params: { slug: post.id },  // or post.slug if you defined a custom slug in frontmatter
     props: { slug: post.id },
@@ -15,7 +15,7 @@ export async function getStaticPaths() {
 const { slug } = Astro.params;
 const entry = await getEntry('blog', slug);
 
-if (!entry) {
+if (!entry || entry.data.draft) {
   return Astro.redirect('/404');
 }
 

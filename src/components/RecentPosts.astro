@@ -1,7 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 
-const allPosts = await getCollection('blog');
+const allPosts = await getCollection('blog', ({ data }) => !data.draft);
 const recentPosts = allPosts
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
   .slice(0, 3);
@@ -23,11 +23,11 @@ function getReadTime(content: string) {
 ---
 
 <div class="space-y-4">
-  {recentPosts.map(async (post) => {
-    const readTime = getReadTime(post.body);
+  {recentPosts.map((post) => {
+    const readTime = getReadTime(post.body ?? '');
     
     return (
-      <a href={`/blog/${post.slug}`} class="block group">
+      <a href={`/blog/${post.id}`} class="block group">
         <div class="text-xs text-neutral-500 mb-1">
           {formatDate(post.data.pubDate)} · {readTime} read
         </div>
