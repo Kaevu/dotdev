@@ -11,6 +11,6 @@ const items = await fetchBookmarks(Astro.locals);
 <BaseLayout>
   <section aria-labelledby="bookmarks-heading" class="">
     <h1 id="bookmarks-heading" class="sr-only">Bookmarks</h1>
-    <Bookmarks client:load items={items} />
+    <Bookmarks client:visible items={items} />
   </section>
 </BaseLayout>

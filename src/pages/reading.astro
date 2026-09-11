@@ -16,7 +16,10 @@ const RES_URL = `https://ebooks.kaevu.dev/api/v2/shares/${SHARE_ID}/dirs`;
 
 let items: ShareItem[] = [];
 try {
-  const res = await fetch(RES_URL, { headers: { accept: "application/json" } });
+  const res = await fetch(RES_URL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+  });
   if (res.ok) {
     items = (await res.json()) as ShareItem[];
   } else {
@@ -67,6 +70,6 @@ const tags = loadTagMap();
 <BaseLayout>
   <section aria-labelledby="bookshelf-heading" class="">
     <h1 id="bookshelf-heading" class="sr-only">Bookshelf</h1>
-    <Bookshelf client:load items={items} tags={tags} />
+    <Bookshelf client:visible items={items} tags={tags} />
   </section>
 </BaseLayout>

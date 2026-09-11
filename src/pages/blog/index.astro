@@ -26,7 +26,9 @@ const formatDate = (date: Date) =>
                   width={400}
                   height={300}
                   src={post.data.heroImage}
-                  alt=""
+                  alt={post.data.title}
+                  loading="lazy"
+                  decoding="async"
                   class="w-full h-48 object-cover transition group-hover:scale-105"
                 />
               </div>

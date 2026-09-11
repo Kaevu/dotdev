@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import Fuse from "fuse.js";
+import type FuseType from "fuse.js";
 import { TOP_TAGS, lastSeg, topOf } from "../lib/bookmarks/taxonomy";
 import { childCounts, topCounts } from "../lib/bookmarks/view";
 import type { BookmarkItem } from "../lib/bookmarks/types";
@@ -19,27 +19,41 @@ export default function Bookmarks({ items, category }: Props) {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [FuseCtor, setFuseCtor] = useState<typeof FuseType | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q), 150);
     return () => clearTimeout(t);
   }, [q]);
 
+  useEffect(() => {
+    let live = true;
+    if (q.trim().length === 0) return;
+    import("fuse.js").then((m) => {
+      if (live) setFuseCtor(() => m.default);
+    });
+    return () => {
+      live = false;
+    };
+  }, [q]);
+
   const fuse = useMemo(
     () =>
-      new Fuse(items, {
-        keys: [
-          { name: "title", weight: 0.45 },
-          { name: "source", weight: 0.15 },
-          { name: "summary", weight: 0.2 },
-          { name: "tags", weight: 0.15 },
-          { name: "url", weight: 0.05 },
-        ],
-        threshold: 0.35,
-        ignoreLocation: true,
-        minMatchCharLength: 2,
-      }),
-    [items]
+      FuseCtor
+        ? new FuseCtor(items, {
+            keys: [
+              { name: "title", weight: 0.45 },
+              { name: "source", weight: 0.15 },
+              { name: "summary", weight: 0.2 },
+              { name: "tags", weight: 0.15 },
+              { name: "url", weight: 0.05 },
+            ],
+            threshold: 0.35,
+            ignoreLocation: true,
+            minMatchCharLength: 2,
+          })
+        : null,
+    [FuseCtor, items]
   );
 
   const searching = dq.trim().length > 0;
@@ -47,7 +61,14 @@ export default function Bookmarks({ items, category }: Props) {
   const visible = useMemo(() => {
     const t = dq.trim();
     if (!t) return items;
-    return fuse.search(t).map((r) => r.item);
+    if (fuse) return fuse.search(t).map((r) => r.item);
+    const lower = t.toLowerCase();
+    return items.filter((it) =>
+      [it.title, it.source, it.summary, it.url, ...it.tags]
+        .join(" ")
+        .toLowerCase()
+        .includes(lower)
+    );
   }, [fuse, dq, items]);
 
   const counts = useMemo(() => topCounts(items), [items]);

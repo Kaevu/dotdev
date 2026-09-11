@@ -1,7 +1,5 @@
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@plugin "@tailwindcss/typography";
 
 /* Theme variables (dark-first). Light can be added by overriding these vars) */
 :root {

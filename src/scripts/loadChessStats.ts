@@ -1,3 +1,5 @@
+import Chart from "chart.js/auto";
+
 type StatsResp = {
   gamesCount: number;
   wins: number;
@@ -34,13 +36,13 @@ async function renderStats(max = 200, page = 1, pageSize = 10) {
 
   // Rating timeline (line)
   const ratingEl = document.getElementById('ratingChart') as HTMLCanvasElement | null;
-  if (ratingEl && (window as any).Chart) {
+  if (ratingEl) {
     const ratingCtx = ratingEl.getContext('2d')!;
     const timeline = (((data as any).ratingTimeline || []) as Array<{ date: string; rating: number | null }>).filter(r => r.rating != null);
     if ((ratingEl as any)._chartInstance) {
       (ratingEl as any)._chartInstance.destroy();
     }
-    const chart = new (window as any).Chart(ratingCtx, {
+    const chart = new Chart(ratingCtx, {
       type: 'line',
       data: {
         labels: timeline.map(t => new Date(t.date).toLocaleDateString()),
@@ -152,10 +154,32 @@ async function renderStats(max = 200, page = 1, pageSize = 10) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  renderStats(200, 1, 10).catch(err => {
-    console.error('Error loading chess stats:', err);
-    const recent = document.getElementById('recent-games-stats');
-    if (recent) recent.innerHTML = `<div class="text-sm text-red-400">Failed to load stats</div>`;
-  });
-});
+function boot() {
+  const target = document.getElementById('stats-summary') ?? document.getElementById('ratingChart');
+  if (!target || !('IntersectionObserver' in window)) {
+    renderStats(200, 1, 10).catch(fail);
+    return;
+  }
+  const io = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        io.disconnect();
+        renderStats(200, 1, 10).catch(fail);
+      }
+    },
+    { rootMargin: '200px' }
+  );
+  io.observe(target);
+}
+
+function fail(err: unknown) {
+  console.error('Error loading chess stats:', err);
+  const recent = document.getElementById('recent-games-stats');
+  if (recent) recent.innerHTML = `<div class="text-sm text-red-400">Failed to load stats</div>`;
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}
