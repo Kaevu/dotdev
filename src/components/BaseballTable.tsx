@@ -918,14 +918,21 @@ export default function BaseballTable() {
                 {cols.map((c) => (
                   <th
                     key={c.key}
-                    onClick={() => toggleSort(c.key)}
-                    className={
-                      "font-normal px-1.5 py-2 text-right cursor-pointer select-none hover:text-neutral-300 whitespace-nowrap " +
-                      (sortKey === c.key ? "text-neutral-200" : "")
-                    }
+                    aria-sort={sortKey === c.key ? (sortDir === -1 ? "descending" : "ascending") : "none"}
+                    className="font-normal px-1.5 py-2 text-right whitespace-nowrap"
                   >
-                    {c.label}
-                    {sortKey === c.key ? (sortDir === -1 ? " ↓" : " ↑") : ""}
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(c.key)}
+                      aria-label={`Sort by ${c.label}`}
+                      className={
+                        "cursor-pointer select-none hover:text-neutral-300 " +
+                        (sortKey === c.key ? "text-neutral-200" : "")
+                      }
+                    >
+                      {c.label}
+                      {sortKey === c.key ? (sortDir === -1 ? " ↓" : " ↑") : ""}
+                    </button>
                   </th>
                 ))}
                 <th className="font-normal px-1.5 py-2 text-right">Form</th>

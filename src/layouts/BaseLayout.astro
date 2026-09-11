@@ -3,6 +3,7 @@
 import Header from "../components/Header.astro";
 import "../styles/global.css";
 import Footer from "../components/Footer.astro";
+import { SITE_DESCRIPTION, SITE_TITLE } from "../consts";
 import "@fontsource/dm-mono/300.css";
 import "@fontsource/dm-mono/400.css";
 import "@fontsource/dm-mono/500.css";
@@ -13,6 +14,15 @@ import "@fontsource/manrope/400.css";
 import "@fontsource/manrope/500.css";
 import "@fontsource/manrope/600.css";
 import "@fontsource/manrope/700.css";
+
+type Props = {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+};
+
+const { title = SITE_TITLE, description = SITE_DESCRIPTION, noindex = false } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://kaevu.dev").toString();
 ---
 
 <!DOCTYPE html>
@@ -20,7 +30,21 @@ import "@fontsource/manrope/700.css";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Kaevu</title>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE_TITLE} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="theme-color" content="#171717" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/site.webmanifest" />
   </head>
   <body class="bg-neutral-900 text-neutral-100 font-mono">
     <div class="bg-texture" aria-hidden="true"><img src="/img/ocean1-banner.png" alt="" loading="lazy" decoding="async" fetchpriority="low" /></div>

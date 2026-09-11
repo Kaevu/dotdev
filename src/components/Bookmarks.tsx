@@ -241,9 +241,11 @@ function BookmarkRow({ it }: { it: BookmarkItem }) {
             {it.title}
           </a>
           {it.summary && (
-            <p
+            <button
+              type="button"
               onClick={() => setOpen((o) => !o)}
-              className="mt-1 text-xs md:text-sm fg-tertiary cursor-pointer"
+              aria-expanded={open}
+              className="mt-1 block w-full text-left text-xs md:text-sm fg-tertiary cursor-pointer"
               title={open ? "collapse" : "expand"}
               style={
                 open
@@ -257,7 +259,7 @@ function BookmarkRow({ it }: { it: BookmarkItem }) {
               }
             >
               {it.summary}
-            </p>
+            </button>
           )}
           {it.tags.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">

@@ -31,7 +31,7 @@ const formatDate = (date) =>
     : 'Date unavailable';
 ---
 
-<BaseLayout title={title ? `${title} — Kaevu` : 'Blog Post'}>
+<BaseLayout title={title ? `${title} — Kaevu` : 'Blog Post'} description={description ?? 'A post on Kaevu.'}>
   <article class="mt-8 prose prose-invert prose-neutral max-w-none">
     <header class="mb-12">
       <time class="text-neutral-500 text-sm block mb-3">

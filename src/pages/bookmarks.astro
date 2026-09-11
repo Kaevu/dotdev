@@ -8,7 +8,7 @@ import { fetchBookmarks } from "../lib/bookmarks/store";
 const items = await fetchBookmarks(Astro.locals);
 ---
 
-<BaseLayout>
+<BaseLayout title="Bookmarks — Kaevu" description="Saved links across CS, ML, math, and finance.">
   <section aria-labelledby="bookmarks-heading" class="">
     <h1 id="bookmarks-heading" class="sr-only">Bookmarks</h1>
     <Bookmarks client:visible items={items} />

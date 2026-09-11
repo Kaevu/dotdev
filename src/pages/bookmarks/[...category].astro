@@ -20,7 +20,7 @@ if (check.ok) {
 }
 ---
 
-<BaseLayout>
+<BaseLayout title={category ? `Bookmarks: ${category} — Kaevu` : "Bookmarks — Kaevu"} description={category ? `Saved links tagged ${category}.` : "Saved links."}>
   <section aria-labelledby="bookmarks-category-heading" class="">
     <h1 id="bookmarks-category-heading" class="sr-only">Bookmarks: {category}</h1>
     <Bookmarks client:visible items={items} category={category} />

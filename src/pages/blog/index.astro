@@ -2,7 +2,7 @@
 import { Image } from 'astro:assets';
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { SITE_TITLE } from '../../consts';
+import { SITE_DESCRIPTION } from '../../consts';
 
 const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
@@ -12,7 +12,7 @@ const formatDate = (date: Date) =>
   new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date); // shorter: Jan 20, 2026
 ---
 
-<BaseLayout title="Blog — Kaevu">
+<BaseLayout title="Blog — Kaevu" description={SITE_DESCRIPTION}>
   <div class="mt-8">
     <h1 class="text-xl font-light tracking-tight mb-10 font-sans">Blog</h1>
 

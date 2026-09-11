@@ -67,7 +67,7 @@ function loadTagMap(): Record<string, string[]> {
 const tags = loadTagMap();
 ---
 
-<BaseLayout>
+<BaseLayout title="Reading — Kaevu" description="Bookshelf: searchable notes across CS, ML, finance, and math.">
   <section aria-labelledby="bookshelf-heading" class="">
     <h1 id="bookshelf-heading" class="sr-only">Bookshelf</h1>
     <Bookshelf client:visible items={items} tags={tags} />
