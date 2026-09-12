@@ -22,7 +22,9 @@ type Props = {
 };
 
 const { title = SITE_TITLE, description = SITE_DESCRIPTION, noindex = false } = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://kaevu.dev").toString();
+const site = Astro.site ?? new URL("https://kaevu.dev");
+const canonical = new URL(Astro.url.pathname, site).toString();
+const ogImage = new URL("/og-image.png", site).toString();
 ---
 
 <!DOCTYPE html>
@@ -39,11 +41,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://kaevu.dev")
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
     <meta name="theme-color" content="#171717" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
   </head>
   <body class="bg-neutral-900 text-neutral-100 font-mono">
