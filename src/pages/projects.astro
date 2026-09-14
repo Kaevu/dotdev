@@ -1,10 +1,13 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro"
+import Logo from "../components/Logo.astro";
 
 type Project = {
   title: string;
   description: string;
   stack: string[];
+  url?: string;
+  image?: string;
 };
 
 const projects: Project[] = [
@@ -39,6 +42,10 @@ const projects: Project[] = [
     stack: ["Astro", "TypeScript", "Tailwind CSS", "Cloudflare Workers", "Cloudflare D1", "SQLite"],
   },
 ];
+
+const cardClass =
+  "flex gap-4 p-4 bg-neutral-900 rounded border border-neutral-800 transition-colors";
+const linkClass = " hover:border-neutral-600";
 ---
 
 <BaseLayout title="Projects — Kaevu" description="Things Kaevu is building: baseball analytics, homelab infrastructure, and tooling.">
@@ -46,21 +53,34 @@ const projects: Project[] = [
     <h1 class="text-3xl font-semibold mb-2 font-sans">Projects</h1>
     <p class="text-neutral-400 mb-8">Things I'm building and tinkering with.</p>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {projects.map((p) => (
-        <article class="p-5 bg-neutral-900 rounded border border-neutral-800 flex flex-col">
-          <h2 class="font-sans text-lg text-neutral-100 mb-2">{p.title}</h2>
-          <p class="text-sm text-neutral-400 leading-relaxed flex-1">{p.description}</p>
-          <div class="flex flex-wrap gap-1.5 mt-4">
-            {p.stack.map((s) => (
-              <span class="pill pill-other">{s}</span>
-            ))}
-          </div>
-        </article>
-      ))}
-      <div class="p-5 rounded border border-dashed border-neutral-800 flex items-center">
-        <p class="text-sm text-neutral-500">Repo links landing here soon — most of this lives on GitLab.</p>
-      </div>
+    <div class="space-y-3">
+      {projects.map((p) => {
+        const inner = (
+          <>
+            <span class="inline-flex items-center justify-center w-24 sm:w-32 shrink-0 self-start aspect-square rounded-lg border border-neutral-800 bg-[#171717] overflow-hidden">
+              {p.image ? (
+                <img src={p.image} alt="" loading="lazy" decoding="async" class="w-full h-full object-cover" />
+              ) : (
+                <Logo class="w-4/5 h-auto text-neutral-200" />
+              )}
+            </span>
+            <span class="flex flex-col min-w-0">
+              <span class="font-sans text-base text-neutral-100 mb-1">{p.title}</span>
+              <span class="text-sm text-neutral-400 leading-relaxed line-clamp-3">{p.description}</span>
+              <span class="flex flex-wrap gap-1.5 mt-2.5">
+                {p.stack.map((s) => (
+                  <span class="pill pill-other">{s}</span>
+                ))}
+              </span>
+            </span>
+          </>
+        );
+        return p.url ? (
+          <a href={p.url} target="_blank" rel="noreferrer noopener" class={cardClass + linkClass}>{inner}</a>
+        ) : (
+          <article class={cardClass}>{inner}</article>
+        );
+      })}
     </div>
   </main>
 </BaseLayout>
