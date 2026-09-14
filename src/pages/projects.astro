@@ -1,6 +1,5 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro"
-import Logo from "../components/Logo.astro";
 
 type Project = {
   title: string;
@@ -8,6 +7,7 @@ type Project = {
   stack: string[];
   url?: string;
   image?: string;
+  tint: [string, string];
 };
 
 const projects: Project[] = [
@@ -16,30 +16,35 @@ const projects: Project[] = [
     description:
       "Analyze how pitchers sequence pitches across counts, handedness, and game context, feeding those patterns into a real-time pitch prediction service.",
     stack: ["Rust", "OCaml", "PostgreSQL", "Parquet", "WebSockets", "MLB Stats API"],
+    tint: ["#1a2e22", "#101613"],
   },
   {
     title: "Baseball Game Prediction",
     description:
       "Predictive models for MLB game outcomes from historical game and player data.",
     stack: ["Python", "pandas", "scikit-learn", "MLB Stats API"],
+    tint: ["#2e2a1a", "#141310"],
   },
   {
     title: "Homelab Infrastructure",
     description:
       "Self-hosted environment for experimenting with virtualization, containers, networking, Kubernetes, and infrastructure automation.",
     stack: ["Proxmox", "Docker", "k3s", "Terraform", "Tailscale", "Traefik", "Cloudflare"],
+    tint: ["#1b2433", "#10131a"],
   },
   {
     title: "Discord Bot",
     description:
       "Containerized Discord bot serving World of Warcraft info via the Blizzard API, with SQLite for persistent data.",
     stack: ["TypeScript", "Node.js", "Docker", "SQLite", "Blizzard API", "Discord API"],
+    tint: ["#232338", "#14141c"],
   },
   {
     title: "Personal Website",
     description:
       "This site — a portfolio and knowledge space on Astro, with Cloudflare on the edge and D1 for persistent data.",
     stack: ["Astro", "TypeScript", "Tailwind CSS", "Cloudflare Workers", "Cloudflare D1", "SQLite"],
+    tint: ["#2a2126", "#151214"],
   },
 ];
 
@@ -57,11 +62,12 @@ const linkClass = " hover:border-neutral-600";
       {projects.map((p) => {
         const inner = (
           <>
-            <span class="inline-flex items-center justify-center w-24 sm:w-32 shrink-0 self-start aspect-square rounded-lg border border-neutral-800 bg-[#171717] overflow-hidden">
-              {p.image ? (
+            <span
+              class="w-24 sm:w-32 shrink-0 self-start aspect-square rounded-lg border border-neutral-800 overflow-hidden"
+              style={`background: linear-gradient(135deg, ${p.tint[0]}, ${p.tint[1]})`}
+            >
+              {p.image && (
                 <img src={p.image} alt="" loading="lazy" decoding="async" class="w-full h-full object-cover" />
-              ) : (
-                <Logo class="w-4/5 h-auto text-neutral-200" />
               )}
             </span>
             <span class="flex flex-col min-w-0">

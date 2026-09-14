@@ -10,16 +10,16 @@ const hasPosts = (await getCollection('blog', ({ data }) => !data.draft)).length
 
 <BaseLayout>
   <div class="space-y-9">
-    <div>
-      <p class="text-neutral-300 text-sm leading-relaxed">
-        Notes and thoughts from a CS grad on infrastructure, GPUs,
-        and scrolling FanGraphs way too much.
-      </p>
-    </div>
-
     <div class="border-l-2 border-neutral-700 pl-4 py-1">
       <p class="text-neutral-400 italic text-sm">
         "A man's reach should exceed his grasp, or what's a heaven for?"
+      </p>
+    </div>
+
+    <div>
+      <p class="text-neutral-300 text-sm leading-relaxed">
+        Notes and thoughts from a CS grad with interests in infrastructure, GPUs,
+        and scrolling FanGraphs way too much.
       </p>
     </div>
 
