@@ -41,6 +41,13 @@
 .font-serif { font-family: var(--font-serif) !important; }
 .font-sans { font-family: var(--font-sans) !important; }
 
+/* Visible keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid #a3a3a3;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Anchor absolute-positioned children (bg-texture) to the document */
 body { position: relative; }
 

@@ -22,10 +22,8 @@ async function renderStats(max = 200, page = 1, pageSize = 10) {
 
   const res = await fetch(`/api/lichess-stats?max=${max}&page=${page}&pageSize=${pageSize}`);
   if (!res.ok) {
-    const json = await res.json().catch(() => null);
-    const msg = (json as any)?.message || 'Failed to load stats';
     const recent = document.getElementById('recent-games-stats');
-    if (recent) recent.innerHTML = `<div class="text-sm text-red-400">${msg}</div>`;
+    if (recent) recent.innerHTML = `<div class="text-sm text-neutral-400">Stats unavailable — Lichess may be down. Try again shortly.</div>`;
     return;
   }
   const data: StatsResp = await res.json();
@@ -66,7 +64,7 @@ async function renderStats(max = 200, page = 1, pageSize = 10) {
     const opens = (((data as any).openingStats || []) as Array<{ name: string; games: number; winRate: number }>).slice(0, 3);
     const total = (data as any).gamesCount || 0;
     if (opens.length === 0 || total === 0) {
-      (topOpeningsEl as any).innerHTML = '<div class="text-sm text-neutral-500">No openings data</div>';
+      (topOpeningsEl as any).innerHTML = '<div class="text-sm text-neutral-500">No openings yet — play a few games first.</div>';
     } else {
       (topOpeningsEl as any).innerHTML = opens.map((o) => {
         const usage = total ? Math.round((o.games / total) * 100) : 0;
@@ -103,7 +101,7 @@ async function renderStats(max = 200, page = 1, pageSize = 10) {
   if (recent) {
     const rg: Array<any> = (data as any).recentGames || [];
     if (rg.length === 0) {
-      (recent as any).innerHTML = '<div class="text-sm text-neutral-500">No recent games</div>';
+      (recent as any).innerHTML = '<div class="text-sm text-neutral-500">No games in this window yet.</div>';
     } else {
       (recent as any).innerHTML = rg.map(g => {
         const colorBadge = g.color === 'white'
@@ -175,7 +173,7 @@ function boot() {
 function fail(err: unknown) {
   console.error('Error loading chess stats:', err);
   const recent = document.getElementById('recent-games-stats');
-  if (recent) recent.innerHTML = `<div class="text-sm text-red-400">Failed to load stats</div>`;
+  if (recent) recent.innerHTML = `<div class="text-sm text-neutral-400">Stats unavailable — Lichess may be down. Try again shortly.</div>`;
 }
 
 if (document.readyState === 'loading') {

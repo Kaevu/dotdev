@@ -1,10 +1,66 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro"
+
+type Project = {
+  title: string;
+  description: string;
+  stack: string[];
+};
+
+const projects: Project[] = [
+  {
+    title: "Pitch Sequencing & Prediction",
+    description:
+      "Analyze how pitchers sequence pitches across counts, handedness, and game context, feeding those patterns into a real-time pitch prediction service.",
+    stack: ["Rust", "OCaml", "PostgreSQL", "Parquet", "WebSockets", "MLB Stats API"],
+  },
+  {
+    title: "Baseball Game Prediction",
+    description:
+      "Predictive models for MLB game outcomes from historical game and player data.",
+    stack: ["Python", "pandas", "scikit-learn", "MLB Stats API"],
+  },
+  {
+    title: "Homelab Infrastructure",
+    description:
+      "Self-hosted environment for experimenting with virtualization, containers, networking, Kubernetes, and infrastructure automation.",
+    stack: ["Proxmox", "Docker", "k3s", "Terraform", "Tailscale", "Traefik", "Cloudflare"],
+  },
+  {
+    title: "Discord Bot",
+    description:
+      "Containerized Discord bot serving World of Warcraft info via the Blizzard API, with SQLite for persistent data.",
+    stack: ["TypeScript", "Node.js", "Docker", "SQLite", "Blizzard API", "Discord API"],
+  },
+  {
+    title: "Personal Website",
+    description:
+      "This site — a portfolio and knowledge space on Astro, with Cloudflare on the edge and D1 for persistent data.",
+    stack: ["Astro", "TypeScript", "Tailwind CSS", "Cloudflare Workers", "Cloudflare D1", "SQLite"],
+  },
+];
 ---
 
-<BaseLayout title="Projects — Kaevu" description="Selected projects. More coming soon." noindex={true}>
+<BaseLayout title="Projects — Kaevu" description="Things Kaevu is building: baseball analytics, homelab infrastructure, and tooling.">
   <main class="mx-auto py-8 px-4 max-w-3xl">
     <h1 class="text-3xl font-semibold mb-2 font-sans">Projects</h1>
-    <p class="text-neutral-400">Coming soon — selected work will be listed here.</p>
+    <p class="text-neutral-400 mb-8">Things I'm building and tinkering with.</p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {projects.map((p) => (
+        <article class="p-5 bg-neutral-900 rounded border border-neutral-800 flex flex-col">
+          <h2 class="font-sans text-lg text-neutral-100 mb-2">{p.title}</h2>
+          <p class="text-sm text-neutral-400 leading-relaxed flex-1">{p.description}</p>
+          <div class="flex flex-wrap gap-1.5 mt-4">
+            {p.stack.map((s) => (
+              <span class="pill pill-other">{s}</span>
+            ))}
+          </div>
+        </article>
+      ))}
+      <div class="p-5 rounded border border-dashed border-neutral-800 flex items-center">
+        <p class="text-sm text-neutral-500">Repo links landing here soon — most of this lives on GitLab.</p>
+      </div>
+    </div>
   </main>
 </BaseLayout>

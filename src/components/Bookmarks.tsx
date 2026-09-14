@@ -190,8 +190,8 @@ export default function Bookmarks({ items, category }: Props) {
       {items.length === 0 && !searching ? (
         <div className="text-sm fg-tertiary py-8" style={mono}>
           {category
-            ? `nothing tagged ${category} yet`
-            : "no bookmarks yet"}
+            ? `nothing tagged ${category} yet — try the search above or browse another shelf`
+            : "no bookmarks here yet — try the search above"}
         </div>
       ) : (
         <div>

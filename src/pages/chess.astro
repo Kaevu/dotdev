@@ -5,9 +5,10 @@ import BaseLayout from "../layouts/BaseLayout.astro"
 <BaseLayout title="Chess — Kaevu" description="Aggregated insights from recent Lichess games: rating timeline, openings, and results.">
   <main class="mx-auto py-8 px-4 max-w-6xl">
     <h1 class="text-3xl font-semibold mb-2 font-sans">Advanced Chess Stats</h1>
-    <p class="text-neutral-400 mb-6">Aggregated insights from your recent Lichess games.</p>
+    <p class="text-neutral-400 mb-1">Aggregated insights from recent Lichess games.</p>
+    <p class="text-neutral-500 text-sm mb-6">Computed from the last 200 games. Win rate and rating track all of them; openings rank your most-played lines.</p>
 
-    <section id="stats-summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+    <section id="stats-summary" aria-live="polite" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
       <div class="p-4 bg-neutral-900 rounded border border-neutral-800">
         <div class="text-sm text-neutral-400">Games Analyzed</div>
         <div id="stat-games" class="text-2xl font-semibold">—</div>
@@ -32,13 +33,21 @@ import BaseLayout from "../layouts/BaseLayout.astro"
 
     <section class="mt-10">
       <h2 class="text-2xl font-semibold mb-3 font-sans">Recent Games</h2>
-      <div id="recent-games-stats" class="space-y-3 min-h-[120px]">
-        <div class="text-neutral-500">Loading recent games...</div>
+      <div id="recent-games-stats" class="space-y-3 min-h-[120px]" aria-live="polite">
+        <div class="space-y-3" aria-hidden="true">
+          {[1, 2, 3].map(() => (
+            <div class="flex justify-between items-center px-3 py-2.5 rounded-lg animate-pulse">
+              <div class="h-4 bg-neutral-700/50 rounded w-40"></div>
+              <div class="h-3 bg-neutral-700/30 rounded w-16"></div>
+            </div>
+          ))}
+        </div>
+        <span class="sr-only">Loading recent games…</span>
       </div>
       <div class="flex items-center justify-between mt-4 gap-2">
-        <button id="rg-prev" class="px-3 py-1.5 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Prev</button>
+        <button id="rg-prev" class="px-4 py-2 min-h-11 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Prev</button>
         <div id="rg-pageinfo" class="text-sm text-neutral-400"></div>
-        <button id="rg-next" class="px-3 py-1.5 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Next</button>
+        <button id="rg-next" class="px-4 py-2 min-h-11 rounded border border-neutral-800 bg-neutral-900 text-sm disabled:opacity-50">Next</button>
       </div>
     </section>
   </main>

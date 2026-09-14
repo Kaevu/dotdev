@@ -904,7 +904,21 @@ export default function BaseballTable() {
       )}
       {!loading && error && <div className="text-sm text-red-400">{error}</div>}
       {!loading && !error && sorted.length === 0 && (
-        <div className="text-sm text-neutral-500">No players found.</div>
+        <div className="text-sm text-neutral-500">
+          No players match these filters.{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setGroup("hitters");
+              setMode("games");
+              setWinVal(14);
+              setStatScope("form");
+            }}
+            className="underline underline-offset-4 hover:text-neutral-300"
+          >
+            Reset filters
+          </button>
+        </div>
       )}
 
       {!loading && !error && sorted.length > 0 && (

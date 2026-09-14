@@ -180,6 +180,12 @@ export default function Bookshelf({ items, tags }: Props) {
         )}
       </div>
 
+      {visible.length === 0 && (
+        <p className="text-sm fg-tertiary" style={{ fontFamily: "var(--font-mono)" }}>
+          Nothing matches — try clearing the search or a different shelf.
+        </p>
+      )}
+
       <div className="divide-y" style={{ borderColor: "var(--border)" }}>
         {visible.map((b) => (
           <a

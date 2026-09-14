@@ -5,15 +5,17 @@ const path = Astro.url.pathname;
 ---
 <header class="mb-12">
   <a href="/" class="inline-flex items-center gap-2.5 mb-5 text-neutral-100" aria-label="Kaevu home">
-    <Logo class="h-7 w-auto" />
+    <span class="inline-flex items-center rounded-[10px] border border-neutral-800 bg-[#171717] px-2 py-1.5">
+      <Logo class="h-5 w-auto" />
+    </span>
     <span class="text-3xl font-light tracking-tight font-sans">Kaevu</span>
   </a>
 
-  <nav class="flex gap-6 text-sm flex-wrap items-start">
-    <a href="/" class={path === "/" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Home</a>
-    <a href="/projects" class={path === "/projects" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Projects</a>
-    <a href="/blog" class={path === "/blog" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Blog</a>
-    <a href="/chess" class={path === "/chess" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Chess</a>
+  <nav class="flex gap-6 text-sm flex-wrap items-start" aria-label="Primary">
+    <a href="/" aria-current={path === "/" ? "page" : undefined} class={path === "/" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Home</a>
+    <a href="/projects" aria-current={path === "/projects" ? "page" : undefined} class={path === "/projects" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Projects</a>
+    <a href="/baseball" aria-current={path === "/baseball" ? "page" : undefined} class={path === "/baseball" ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Baseball</a>
+    <a href="/bookmarks" aria-current={path.startsWith("/bookmarks") ? "page" : undefined} class={path.startsWith("/bookmarks") ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300"}>Bookmarks</a>
 
     <MoreMenu />
   </nav>
