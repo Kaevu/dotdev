@@ -80,22 +80,20 @@ async function loadBookmarks() {
         const title = escapeHtml(it.title || it.url);
         const url = escapeAttr(it.url);
         const pill = tag
-          ? `<span class="${pillClass(tag)}" title="${escapeAttr(tag)}">${escapeHtml(pillLabel(tag))}</span>`
+          ? `<span class="${pillClass(tag)} flex-shrink-0" title="${escapeAttr(tag)}">${escapeHtml(pillLabel(tag))}</span>`
           : "";
         return `
         <a
           href="${url}"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex justify-between items-start gap-3 group cursor-pointer hover:bg-neutral-800/50 -mx-3 px-3 py-2 rounded-lg transition-all duration-200 border border-transparent hover:border-neutral-700/50"
+          class="flex items-baseline gap-2 group cursor-pointer hover:bg-neutral-800/50 -mx-3 px-3 py-2 rounded-lg transition-all duration-200 border border-transparent hover:border-neutral-700/50"
         >
-          <div class="flex-1 min-w-0">
-            <div class="text-neutral-200 group-hover:text-neutral-100 transition-colors font-sans text-sm truncate">
-              ${title}
-            </div>
-            <div class="mt-1">${pill}</div>
-          </div>
-          <div class="text-xs text-neutral-500 whitespace-nowrap flex-shrink-0 pt-0.5">${date}</div>
+          <span class="flex-1 min-w-0 truncate text-neutral-200 group-hover:text-neutral-100 transition-colors font-sans text-sm">
+            ${title}
+          </span>
+          ${pill}
+          <span class="text-xs text-neutral-500 whitespace-nowrap flex-shrink-0">${date}</span>
         </a>`;
       })
       .join("");

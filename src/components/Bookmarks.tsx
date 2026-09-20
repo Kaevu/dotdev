@@ -215,7 +215,7 @@ export default function Bookmarks({ items, category }: Props) {
           )}
           <div className="divide-y" style={{ borderColor: "var(--border)" }}>
             {list.map((it) => (
-              <BookmarkRow key={it.id + it.url} it={it} />
+              <BookmarkRow key={it.id + it.url} it={it} compact={truncated} />
             ))}
           </div>
           {showToggle && (
@@ -239,7 +239,7 @@ export default function Bookmarks({ items, category }: Props) {
   );
 }
 
-function BookmarkRow({ it }: { it: BookmarkItem }) {
+function BookmarkRow({ it, compact }: { it: BookmarkItem; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="group py-3">
@@ -268,7 +268,7 @@ function BookmarkRow({ it }: { it: BookmarkItem }) {
           >
             {it.title}
           </a>
-          {it.summary && (
+          {!compact && it.summary && (
             <button
               type="button"
               onClick={() => setOpen((o) => !o)}
