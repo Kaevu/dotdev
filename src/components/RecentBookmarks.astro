@@ -1,0 +1,26 @@
+<div id="recent-bookmarks" class="space-y-3 min-h-[200px]">
+  <div class="loading space-y-3">
+    {[1, 2, 3].map(() => (
+      <div class="flex justify-between items-start -mx-3 px-3 py-2 rounded-lg animate-pulse">
+        <div class="flex-1">
+          <div class="h-4 bg-neutral-700/50 rounded w-48 mb-2"></div>
+          <div class="h-5 bg-neutral-700/30 rounded w-16"></div>
+        </div>
+        <div class="h-3 bg-neutral-700/30 rounded w-16 flex-shrink-0"></div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<script src="../scripts/loadBookmarks.ts"></script>
+
+<style>
+  #recent-bookmarks {
+    opacity: 0;
+    animation: fadeIn 0.4s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    to { opacity: 1; }
+  }
+</style>

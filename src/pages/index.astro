@@ -3,6 +3,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import RecentPosts from "../components/RecentPosts.astro";
 import RecentGames from "../components/RecentGames.astro";
+import RecentBookmarks from "../components/RecentBookmarks.astro";
 import { getCollection } from 'astro:content';
 
 const hasPosts = (await getCollection('blog', ({ data }) => !data.draft)).length > 0;
@@ -33,6 +34,14 @@ const hasPosts = (await getCollection('blog', ({ data }) => !data.draft)).length
     <section aria-labelledby="games-heading">
       <h2 id="games-heading" class="text-xl font-light tracking-tight mb-4 font-sans">Recent games</h2>
       <RecentGames />
+    </section>
+
+    <section aria-labelledby="bookmarks-heading">
+      <h2 id="bookmarks-heading" class="text-xl font-light tracking-tight mb-4 font-sans">Recent bookmarks</h2>
+      <RecentBookmarks />
+      <div class="mt-4">
+        <a href="/bookmarks" class="text-sm text-neutral-400 hover:text-neutral-200 transition-colors underline underline-offset-4">View all bookmarks →</a>
+      </div>
     </section>
   </div>
 </BaseLayout>

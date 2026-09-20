@@ -6,6 +6,8 @@ import type { BookmarkItem } from "../lib/bookmarks/types";
 
 type Props = { items: BookmarkItem[]; category?: string };
 
+const RECENT_LIMIT = 10;
+
 const mono = { fontFamily: "var(--font-mono)" } as const;
 
 function fmtMinutes(min: number): string {
@@ -19,6 +21,7 @@ export default function Bookmarks({ items, category }: Props) {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [showAll, setShowAll] = useState(false);
   const [FuseCtor, setFuseCtor] = useState<typeof FuseType | null>(null);
 
   useEffect(() => {
@@ -57,6 +60,7 @@ export default function Bookmarks({ items, category }: Props) {
   );
 
   const searching = dq.trim().length > 0;
+  const isMainView = !category;
 
   const visible = useMemo(() => {
     const t = dq.trim();
@@ -70,6 +74,11 @@ export default function Bookmarks({ items, category }: Props) {
         .includes(lower)
     );
   }, [fuse, dq, items]);
+
+  // Default main view shows only recent items; searching or See All shows everything.
+  const truncated = isMainView && !searching && !showAll;
+  const list = truncated ? visible.slice(0, RECENT_LIMIT) : visible;
+  const showToggle = isMainView && !searching && items.length > RECENT_LIMIT;
 
   const counts = useMemo(() => topCounts(items), [items]);
 
@@ -94,6 +103,10 @@ export default function Bookmarks({ items, category }: Props) {
     <span>
       {visible.length} result{visible.length === 1 ? "" : "s"} for &ldquo;
       {dq.trim()}&rdquo;
+    </span>
+  ) : truncated ? (
+    <span>
+      showing {list.length} of {items.length} — recent
     </span>
   ) : (
     <span>
@@ -201,10 +214,25 @@ export default function Bookmarks({ items, category }: Props) {
             </div>
           )}
           <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {visible.map((it) => (
+            {list.map((it) => (
               <BookmarkRow key={it.id + it.url} it={it} />
             ))}
           </div>
+          {showToggle && (
+            <div className="pt-4">
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                aria-expanded={showAll}
+                className="text-xs fg-tertiary hover:fg-primary transition-colors underline underline-offset-4"
+                style={mono}
+              >
+                {showAll
+                  ? "show fewer ↑"
+                  : `see all ${items.length} bookmarks ↓`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
