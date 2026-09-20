@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type FuseType from "fuse.js";
 import { TOP_TAGS, lastSeg, topOf } from "../lib/bookmarks/taxonomy";
 import { childCounts, topCounts } from "../lib/bookmarks/view";
@@ -23,7 +23,6 @@ export default function Bookmarks({ items, category }: Props) {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
   const [FuseCtor, setFuseCtor] = useState<typeof FuseType | null>(null);
-  const listTopRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q), 150);
@@ -94,17 +93,6 @@ export default function Bookmarks({ items, category }: Props) {
     [items, category]
   );
 
-  function toggleShowAll() {
-    const expanding = !showAll;
-    setShowAll(expanding);
-    if (expanding) {
-      // Keep the search bar in view after the list grows.
-      requestAnimationFrame(() => {
-        listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
-  }
-
   function toggle(top: string) {
     setExpanded((xs) =>
       xs.includes(top) ? xs.filter((x) => x !== top) : [...xs, top]
@@ -129,7 +117,7 @@ export default function Bookmarks({ items, category }: Props) {
 
   return (
     <div className="space-y-8">
-      <div ref={listTopRef} className="flex justify-center scroll-mt-4">
+      <div className="flex justify-center">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -234,7 +222,7 @@ export default function Bookmarks({ items, category }: Props) {
             <div className="pt-4">
               <button
                 type="button"
-                onClick={toggleShowAll}
+                onClick={() => setShowAll((v) => !v)}
                 aria-expanded={showAll}
                 className="text-xs fg-tertiary hover:fg-primary transition-colors underline underline-offset-4"
                 style={mono}
