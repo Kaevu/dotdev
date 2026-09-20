@@ -10,7 +10,7 @@ const items = await fetchBookmarks(Astro.locals);
 
 <BaseLayout title="Bookmarks — Kaevu" description="Saved links across CS, ML, math, and finance.">
   <div class="mt-8">
-    <h1 id="bookmarks-heading" class="text-xl font-light tracking-tight mb-2 font-sans">Bookmarks</h1>
+    <h1 id="bookmarks-heading" class="text-xl font-light tracking-tight mb-2 font-serif">Bookmarks</h1>
     <p class="text-sm text-neutral-500 mb-6">Saved links worth keeping — browse the shelves or search everything.</p>
     <Bookmarks client:visible items={items} />
   </div>

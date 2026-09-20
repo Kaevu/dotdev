@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type FuseType from "fuse.js";
 import { TOP_TAGS, lastSeg, topOf } from "../lib/bookmarks/taxonomy";
 import { childCounts, topCounts } from "../lib/bookmarks/view";
@@ -23,6 +23,7 @@ export default function Bookmarks({ items, category }: Props) {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
   const [FuseCtor, setFuseCtor] = useState<typeof FuseType | null>(null);
+  const listTopRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q), 150);
@@ -93,6 +94,17 @@ export default function Bookmarks({ items, category }: Props) {
     [items, category]
   );
 
+  function toggleShowAll() {
+    const expanding = !showAll;
+    setShowAll(expanding);
+    if (expanding) {
+      // Keep the search bar in view after the list grows.
+      requestAnimationFrame(() => {
+        listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }
+
   function toggle(top: string) {
     setExpanded((xs) =>
       xs.includes(top) ? xs.filter((x) => x !== top) : [...xs, top]
@@ -117,7 +129,7 @@ export default function Bookmarks({ items, category }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-center">
+      <div ref={listTopRef} className="flex justify-center scroll-mt-4">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -207,7 +219,7 @@ export default function Bookmarks({ items, category }: Props) {
             : "no bookmarks here yet — try the search above"}
         </div>
       ) : (
-        <div>
+        <div className="pb-20">
           {!searching && (
             <div className="text-xs fg-tertiary pb-1" style={mono}>
               {countLine}
@@ -222,7 +234,7 @@ export default function Bookmarks({ items, category }: Props) {
             <div className="pt-4">
               <button
                 type="button"
-                onClick={() => setShowAll((v) => !v)}
+                onClick={toggleShowAll}
                 aria-expanded={showAll}
                 className="text-xs fg-tertiary hover:fg-primary transition-colors underline underline-offset-4"
                 style={mono}
@@ -241,6 +253,91 @@ export default function Bookmarks({ items, category }: Props) {
 
 function BookmarkRow({ it, compact }: { it: BookmarkItem; compact?: boolean }) {
   const [open, setOpen] = useState(false);
+
+  function clickedInLink(target: EventTarget | null): boolean {
+    return (
+      target instanceof HTMLElement && target.closest("a") !== null
+    );
+  }
+
+  function toggleOpen() {
+    setOpen((o) => !o);
+  }
+
+  if (compact) {
+    return (
+      <div
+        className="group py-2 cursor-pointer"
+        onClick={(e) => {
+          if (!clickedInLink(e.target)) toggleOpen();
+        }}
+        onKeyDown={(e) => {
+          if (
+            (e.key === "Enter" || e.key === " ") &&
+            !clickedInLink(e.target)
+          ) {
+            e.preventDefault();
+            toggleOpen();
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        aria-expanded={open}
+        title={open ? "collapse" : "expand"}
+      >
+        <div
+          className="flex items-baseline gap-2 text-xs fg-tertiary"
+          style={mono}
+        >
+          <span className="flex-1 min-w-0 truncate">
+            <span>{it.kind}</span>
+            <span> · </span>
+            <span>{it.source}</span>
+            {it.kind !== "video" && it.reading_minutes != null && (
+              <>
+                <span> · </span>
+                <span>{fmtMinutes(it.reading_minutes)}</span>
+              </>
+            )}
+          </span>
+          <span aria-hidden="true">{open ? "[–]" : "[+]"}</span>
+          <span className="whitespace-nowrap flex-shrink-0">
+            {it.saved_at.slice(0, 10)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <a
+            href={it.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="flex-1 min-w-0 truncate font-serif text-sm md:text-base fg-secondary group-hover:fg-primary transition-colors"
+            title={it.title}
+          >
+            {it.title}
+          </a>
+          {it.tags.length > 0 && (
+            <span className="flex gap-1.5 flex-shrink-0 overflow-hidden">
+              {it.tags.map((t) => (
+                <a
+                  key={t}
+                  href={`/bookmarks/${t}`}
+                  title={t}
+                  className={`pill pill-${topOf(t)}`}
+                  style={{ opacity: 0.85 }}
+                >
+                  {lastSeg(t)}
+                </a>
+              ))}
+            </span>
+          )}
+        </div>
+        {open && it.summary && (
+          <p className="mt-1 text-xs md:text-sm fg-tertiary">{it.summary}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="group py-3">
       <div className="grid" style={{ gridTemplateColumns: "1fr auto" }}>

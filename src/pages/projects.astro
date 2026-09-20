@@ -55,7 +55,7 @@ const linkClass = " hover:border-neutral-600";
 
 <BaseLayout title="Projects — Kaevu" description="Things Kaevu is building: baseball analytics, homelab infrastructure, and tooling.">
   <main class="mx-auto py-8 px-4 max-w-3xl">
-    <h1 class="text-3xl font-semibold mb-2 font-sans">Projects</h1>
+    <h1 class="text-3xl font-semibold mb-2 font-serif">Projects</h1>
     <p class="text-neutral-400 mb-8">Things I'm building and tinkering with.</p>
 
     <div class="space-y-3">
@@ -71,7 +71,7 @@ const linkClass = " hover:border-neutral-600";
               )}
             </span>
             <span class="flex flex-col min-w-0">
-              <span class="font-sans text-base text-neutral-100 mb-1">{p.title}</span>
+              <span class="font-serif text-base text-neutral-100 mb-1">{p.title}</span>
               <span class="text-sm text-neutral-400 leading-relaxed line-clamp-3">{p.description}</span>
               <span class="flex flex-wrap gap-1.5 mt-2.5">
                 {p.stack.map((s) => (

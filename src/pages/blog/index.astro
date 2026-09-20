@@ -14,7 +14,7 @@ const formatDate = (date: Date) =>
 
 <BaseLayout title="Blog — Kaevu" description={SITE_DESCRIPTION}>
   <div class="mt-8">
-    <h1 class="text-xl font-light tracking-tight mb-10 font-sans">Blog</h1>
+    <h1 class="text-xl font-light tracking-tight mb-10 font-serif">Blog</h1>
 
     <div class="space-y-10">
       {
@@ -35,7 +35,7 @@ const formatDate = (date: Date) =>
             )}
 
             <div class="flex-1">
-              <h2 class="text-xl font-light tracking-tight mb-2 group-hover:text-sky-400 transition-colors font-sans">
+              <h2 class="text-xl font-light tracking-tight mb-2 group-hover:text-sky-400 transition-colors font-serif">
                 <a href={`/blog/${post.id}/`} class="no-underline">
                   {post.data.title}
                 </a>

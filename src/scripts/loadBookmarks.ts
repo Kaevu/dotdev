@@ -89,7 +89,7 @@ async function loadBookmarks() {
           rel="noopener noreferrer"
           class="flex items-baseline gap-2 group cursor-pointer hover:bg-neutral-800/50 -mx-3 px-3 py-2 rounded-lg transition-all duration-200 border border-transparent hover:border-neutral-700/50"
         >
-          <span class="flex-1 min-w-0 truncate text-neutral-200 group-hover:text-neutral-100 transition-colors font-sans text-sm">
+          <span class="flex-1 min-w-0 truncate text-neutral-200 group-hover:text-neutral-100 transition-colors font-serif text-sm">
             ${title}
           </span>
           ${pill}
